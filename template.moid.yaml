@@ -1,0 +1,60 @@
+---
+
+### File 3: `template.moid.yaml`
+
+```yaml
+$schema: "https://raw.githubusercontent.com/YOUR_GITHUB_USERNAME/moid/main/schema.json"
+moid_version: "1.0.0"
+
+# ==============================================================================
+# 1. AT-A-GLANCE IDENTIFIERS & ACCESS
+# ==============================================================================
+modulus: "transformer" # Options: [transformer, transformation_model, state_space, graph_network, neural_operator, hybrid]
+moid: "organization/model-id"
+name: "Human Readable Model Name"
+organization: "Organization or Author Name"
+version: "1.0.0"
+
+# Licensing Framework
+licensing:
+  tier: "copycenter" # Options: [copycenter, copyleft, copyright]
+  spdx_license: "Apache-2.0"
+  allow_commercial: true
+
+# Openness & Access Matrix
+access_control:
+  open_weights: true
+  open_code: true
+  open_data: true
+  reproducibility: "full" # Options: [full, partial, blackbox]
+
+# Focus Allocation Vector (Sum should normalize toward 1.0)
+domain_focus:
+  primary: "language" # Options: [language, math, physics, multimodal, custom]
+  focus_weights:
+    language: 1.00
+    math: 0.00
+    physics: 0.00
+
+# Parameters & Core Hashes
+parameters:
+  total_count: 0
+  trainable_count: 0
+  base_precision: "bf16"
+  sha256: ""
+
+# ==============================================================================
+# 2. DISTILLATION & MODEL LINEAGE
+# ==============================================================================
+distillation:
+  is_distilled: false
+  distillation_type: "none"
+  teachers: []
+
+# ==============================================================================
+# 3. COMPLETE TRAINING DATA INGESTION MANIFEST
+# ==============================================================================
+data_provenance:
+  total_tokens: 0
+  ingestion_catalog_file: "ingestion_manifest.jsonl"
+  catalog_file_hash_sha256: ""
