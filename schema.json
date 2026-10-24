@@ -1,0 +1,90 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ModulusIdentifierSpecification",
+  "type": "object",
+  "required": [
+    "moid_version",
+    "modulus",
+    "moid",
+    "name",
+    "licensing",
+    "access_control",
+    "domain_focus",
+    "parameters",
+    "data_provenance"
+  ],
+  "properties": {
+    "moid_version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
+    "modulus": {
+      "type": "string",
+      "enum": ["transformer", "transformation_model", "state_space", "graph_network", "neural_operator", "hybrid"]
+    },
+    "moid": { "type": "string" },
+    "name": { "type": "string" },
+    "organization": { "type": "string" },
+    "version": { "type": "string" },
+    "licensing": {
+      "type": "object",
+      "required": ["tier", "spdx_license"],
+      "properties": {
+        "tier": { "type": "string", "enum": ["copycenter", "copyleft", "copyright"] },
+        "spdx_license": { "type": "string" },
+        "allow_commercial": { "type": "boolean" }
+      }
+    },
+    "access_control": {
+      "type": "object",
+      "required": ["open_weights", "open_code", "open_data", "reproducibility"],
+      "properties": {
+        "open_weights": { "type": "boolean" },
+        "open_code": { "type": "boolean" },
+        "open_data": { "type": "boolean" },
+        "reproducibility": { "type": "string", "enum": ["full", "partial", "blackbox"] }
+      }
+    },
+    "domain_focus": {
+      "type": "object",
+      "required": ["primary", "focus_weights"],
+      "properties": {
+        "primary": { "type": "string" },
+        "focus_weights": {
+          "type": "object",
+          "required": ["language", "math", "physics"],
+          "properties": {
+            "language": { "type": "number", "minimum": 0, "maximum": 1 },
+            "math": { "type": "number", "minimum": 0, "maximum": 1 },
+            "physics": { "type": "number", "minimum": 0, "maximum": 1 }
+          }
+        }
+      }
+    },
+    "parameters": {
+      "type": "object",
+      "required": ["total_count", "base_precision"],
+      "properties": {
+        "total_count": { "type": "integer" },
+        "trainable_count": { "type": "integer" },
+        "base_precision": { "type": "string" },
+        "sha256": { "type": "string" }
+      }
+    },
+    "distillation": {
+      "type": "object",
+      "required": ["is_distilled"],
+      "properties": {
+        "is_distilled": { "type": "boolean" },
+        "distillation_type": { "type": "string" },
+        "teachers": { "type": "array" }
+      }
+    },
+    "data_provenance": {
+      "type": "object",
+      "required": ["ingestion_catalog_file"],
+      "properties": {
+        "total_tokens": { "type": "integer" },
+        "ingestion_catalog_file": { "type": "string" },
+        "catalog_file_hash_sha256": { "type": "string" }
+      }
+    }
+  }
+}
