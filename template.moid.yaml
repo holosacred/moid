@@ -3,7 +3,7 @@
 ### File 3: `template.moid.yaml`
 
 ```yaml
-$schema: "https://raw.githubusercontent.com/YOUR_GITHUB_USERNAME/moid/main/schema.json"
+$schema: "https://raw.githubusercontent.com/holosacred/moid/main/schema.json"
 moid_version: "1.0.0"
 
 # ==============================================================================
