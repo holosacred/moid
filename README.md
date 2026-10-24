@@ -22,7 +22,7 @@ Modern AI software spans far beyond static Transformer checkpoints—encompassin
 Drop a `moid.yaml` file into the root of your model repository:
 
 ```yaml
-$schema: "[https://raw.githubusercontent.com/YOUR_GITHUB_USERNAME/moid/main/schema.json](https://raw.githubusercontent.com/YOUR_GITHUB_USERNAME/moid/main/schema.json)"
+$schema: "[https://raw.githubusercontent.com/holosacred/moid/main/schema.json](https://raw.githubusercontent.com/holosacred/moid/main/schema.json)"
 moid_version: "1.0.0"
 
 modulus: "transformer"
