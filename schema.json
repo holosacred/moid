@@ -1,34 +1,52 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/holosacred/moid/main/schema.json",
   "title": "ModulusIdentifierSpecification",
   "type": "object",
   "required": [
     "moid_version",
     "modulus",
     "moid",
-    "name",
     "licensing",
     "access_control",
     "domain_focus",
     "parameters",
+    "checkpoints",
     "data_provenance"
   ],
   "properties": {
-    "moid_version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
+    "moid_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
     "modulus": {
       "type": "string",
-      "enum": ["transformer", "transformation_model", "state_space", "graph_network", "neural_operator", "hybrid"]
+      "enum": [
+        "transformer",
+        "transformation_model",
+        "state_space",
+        "graph_network",
+        "neural_operator",
+        "hybrid"
+      ]
     },
-    "moid": { "type": "string" },
-    "name": { "type": "string" },
+    "moid": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+$"
+    },
+    "model_name": { "type": "string" },
+    "transformation_name": { "type": "string" },
     "organization": { "type": "string" },
     "version": { "type": "string" },
     "licensing": {
       "type": "object",
       "required": ["tier", "spdx_license"],
       "properties": {
-        "tier": { "type": "string", "enum": ["copycenter", "copyleft", "copyright"] },
-        "spdx_license": { "type": "string" },
+        "tier": {
+          "type": "string",
+          "enum": ["copycenter", "copyleft", "copyright"]
+        },
+        "spdx_license": { "type": "string", "minLength": 1 },
         "allow_commercial": { "type": "boolean" }
       }
     },
@@ -39,14 +57,20 @@
         "open_weights": { "type": "boolean" },
         "open_code": { "type": "boolean" },
         "open_data": { "type": "boolean" },
-        "reproducibility": { "type": "string", "enum": ["full", "partial", "blackbox"] }
+        "reproducibility": {
+          "type": "string",
+          "enum": ["full", "partial", "blackbox"]
+        }
       }
     },
     "domain_focus": {
       "type": "object",
       "required": ["primary", "focus_weights"],
       "properties": {
-        "primary": { "type": "string" },
+        "primary": {
+          "type": "string",
+          "enum": ["language", "math", "physics", "multimodal", "custom"]
+        },
         "focus_weights": {
           "type": "object",
           "required": ["language", "math", "physics"],
@@ -62,10 +86,27 @@
       "type": "object",
       "required": ["total_count", "base_precision"],
       "properties": {
-        "total_count": { "type": "integer" },
-        "trainable_count": { "type": "integer" },
-        "base_precision": { "type": "string" },
-        "sha256": { "type": "string" }
+        "total_count": { "type": "integer", "minimum": 0 },
+        "active_count": { "type": "integer", "minimum": 0 },
+        "base_precision": { "type": "string" }
+      }
+    },
+    "checkpoints": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["path", "format", "precision", "sha256"],
+        "properties": {
+          "path": { "type": "string" },
+          "format": { "type": "string" },
+          "precision": { "type": "string" },
+          "quantization": { "type": "string" },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-fA-F0-9]{64}$"
+          }
+        }
       }
     },
     "distillation": {
@@ -74,17 +115,86 @@
       "properties": {
         "is_distilled": { "type": "boolean" },
         "distillation_type": { "type": "string" },
-        "teachers": { "type": "array" }
+        "loss_targets": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "compression_ratio": { "type": "string" },
+        "teachers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["teacher_moid", "modulus"],
+            "properties": {
+              "teacher_moid": { "type": "string" },
+              "modulus": { "type": "string" },
+              "weight_contribution": { "type": "number", "minimum": 0, "maximum": 1 }
+            }
+          }
+        }
+      },
+      "if": {
+        "properties": { "is_distilled": { "const": true } }
+      },
+      "then": {
+        "required": ["distillation_type", "teachers"]
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "properties": {
+        "min_vram_gb": { "type": "number", "minimum": 0 },
+        "context_window": { "type": "integer", "minimum": 1 },
+        "chat_template": { "type": "string" },
+        "supported_engines": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
       }
     },
     "data_provenance": {
       "type": "object",
-      "required": ["ingestion_catalog_file"],
+      "required": ["ingestion_catalog_file", "catalog_file_hash_sha256"],
       "properties": {
-        "total_tokens": { "type": "integer" },
+        "total_tokens": { "type": "integer", "minimum": 0 },
+        "total_field_snapshots": { "type": "integer", "minimum": 0 },
         "ingestion_catalog_file": { "type": "string" },
-        "catalog_file_hash_sha256": { "type": "string" }
+        "ingestion_schema": { "type": "string" },
+        "catalog_file_hash_sha256": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{64}$"
+        }
       }
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "modulus": { "const": "transformer" } }
+      },
+      "then": {
+        "required": ["model_name", "transformer_spec"],
+        "properties": {
+          "transformer_spec": {
+            "type": "object",
+            "required": ["vocabulary_size", "context_length"]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "modulus": { "const": "transformation_model" } }
+      },
+      "then": {
+        "required": ["transformation_name", "transformation_spec"],
+        "properties": {
+          "transformation_spec": {
+            "type": "object",
+            "required": ["input_manifold", "output_manifold", "transformation_kernel"]
+          }
+        }
+      }
+    }
+  ]
 }

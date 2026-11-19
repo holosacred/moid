@@ -1,60 +1,76 @@
----
-
-### File 3: `template.moid.yaml`
-
-```yaml
 $schema: "https://raw.githubusercontent.com/holosacred/moid/main/schema.json"
 moid_version: "1.0.0"
 
-# ==============================================================================
-# 1. AT-A-GLANCE IDENTIFIERS & ACCESS
-# ==============================================================================
-modulus: "transformer" # Options: [transformer, transformation_model, state_space, graph_network, neural_operator, hybrid]
-moid: "organization/model-id"
-name: "Human Readable Model Name"
-organization: "Organization or Author Name"
+modulus: "transformer"
+moid: "holosacred/aether-moe-7b-v1"
+model_name: "Aether MoE 7B"
+organization: "Open Nexus Lab"
 version: "1.0.0"
 
-# Licensing Framework
 licensing:
-  tier: "copycenter" # Options: [copycenter, copyleft, copyright]
+  tier: "copycenter"
   spdx_license: "Apache-2.0"
   allow_commercial: true
 
-# Openness & Access Matrix
 access_control:
   open_weights: true
   open_code: true
   open_data: true
-  reproducibility: "full" # Options: [full, partial, blackbox]
+  reproducibility: "full"
 
-# Focus Allocation Vector (Sum should normalize toward 1.0)
 domain_focus:
-  primary: "language" # Options: [language, math, physics, multimodal, custom]
+  primary: "physics"
   focus_weights:
-    language: 1.00
-    math: 0.00
-    physics: 0.00
+    language: 0.20
+    math: 0.30
+    physics: 0.50
 
-# Parameters & Core Hashes
 parameters:
-  total_count: 0
-  trainable_count: 0
+  total_count: 7240000000
+  active_count: 2400000000
   base_precision: "bf16"
-  sha256: ""
 
-# ==============================================================================
-# 2. DISTILLATION & MODEL LINEAGE
-# ==============================================================================
+transformer_spec:
+  vocabulary_size: 128256
+  context_length: 32768
+  embedding_dimension: 4096
+  head_count: 32
+  key_value_groups: 8
+  positional_encoding: "rope"
+
+checkpoints:
+  - path: "weights/model-00001-of-00002.safetensors"
+    format: "safetensors"
+    precision: "bf16"
+    quantization: "none"
+    sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  - path: "weights/model-00002-of-00002.safetensors"
+    format: "safetensors"
+    precision: "bf16"
+    quantization: "none"
+    sha256: "4d9f8c6b1a2e3f4056789abcde0123456789abcdef0123456789abcdef012345"
+
 distillation:
-  is_distilled: false
-  distillation_type: "none"
-  teachers: []
+  is_distilled: true
+  distillation_type: "cross_paradigm_feature_matching"
+  loss_targets: ["logits_kl", "hidden_state_mse"]
+  compression_ratio: "10:1"
+  teachers:
+    - teacher_moid: "holosacred/aether-teacher-70b"
+      modulus: "transformer"
+      weight_contribution: 0.80
+    - teacher_moid: "holosacred/navier-stokes-operator-v1"
+      modulus: "neural_operator"
+      weight_contribution: 0.20
 
-# ==============================================================================
-# 3. COMPLETE TRAINING DATA INGESTION MANIFEST
-# ==============================================================================
+runtime:
+  min_vram_gb: 16
+  context_window: 32768
+  chat_template: "chatml"
+  supported_engines: ["llama.cpp", "vllm", "transformers"]
+
 data_provenance:
-  total_tokens: 0
+  total_tokens: 1800000000000
   ingestion_catalog_file: "ingestion_manifest.jsonl"
-  catalog_file_hash_sha256: ""
+  ingestion_schema: "https://raw.githubusercontent.com/holosacred/moid/main/ingestion.schema.json"
+  catalog_file_hash_sha256: "7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a"

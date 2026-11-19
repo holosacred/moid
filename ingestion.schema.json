@@ -1,0 +1,42 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/holosacred/moid/main/ingestion.schema.json",
+  "title": "MoIDIngestionRecord",
+  "description": "Schema for each JSON object line inside ingestion_manifest.jsonl",
+  "type": "object",
+  "required": [
+    "source_id",
+    "source_uri",
+    "media_category",
+    "content_hash_sha256",
+    "license_tier",
+    "spdx_license"
+  ],
+  "properties": {
+    "source_id": { "type": "string" },
+    "source_uri": { "type": "string" },
+    "title": { "type": "string" },
+    "media_category": {
+      "type": "string",
+      "description": "Primary classification from the Media Classification System"
+    },
+    "media_sub_category": { "type": "string" },
+    "content_hash_sha256": {
+      "type": "string",
+      "pattern": "^[a-fA-F0-9]{64}$"
+    },
+    "token_count": { "type": "integer", "minimum": 0 },
+    "sample_count": { "type": "integer", "minimum": 0 },
+    "epoch_weight": { "type": "number", "minimum": 0 },
+    "split": {
+      "type": "string",
+      "enum": ["pretrain", "midtrain", "sft", "distillation", "alignment", "eval"]
+    },
+    "license_tier": {
+      "type": "string",
+      "enum": ["copycenter", "copyleft", "copyright"]
+    },
+    "spdx_license": { "type": "string" },
+    "domain_tag": { "type": "string" }
+  }
+}
