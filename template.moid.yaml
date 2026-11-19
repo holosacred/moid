@@ -1,11 +1,19 @@
-$schema: "https://raw.githubusercontent.com/holosacred/moid/main/schema.json"
-moid_version: "1.0.0"
+$schema: "https://raw.githubusercontent.com/holosacred/moid/v0.2.0/schema.json"
+moid_version: "0.2.0"
 
 modulus: "transformer"
+stack_role: "generator"
 moid: "holosacred/aether-moe-7b-v1"
 model_name: "Aether MoE 7B"
 organization: "Open Nexus Lab"
-version: "1.0.0"
+version: "0.2.0"
+
+stack_spec:
+  secondary_roles: ["router"]
+  decision_semantics: "token_emission"
+  deterministic: false
+  upstream_moids: []
+  downstream_moids: []
 
 licensing:
   tier: "copycenter"
@@ -72,5 +80,5 @@ runtime:
 data_provenance:
   total_tokens: 1800000000000
   ingestion_catalog_file: "ingestion_manifest.jsonl"
-  ingestion_schema: "https://raw.githubusercontent.com/holosacred/moid/main/ingestion.schema.json"
+  ingestion_schema: "https://raw.githubusercontent.com/holosacred/moid/v0.2.0/ingestion.schema.json"
   catalog_file_hash_sha256: "7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a"

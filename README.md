@@ -2,73 +2,23 @@
 
 **An identification system for artificial intelligence models and broader AI-related software.**
 
-MoID (`moid`) provides a deterministic, machine-readable manifest (`moid.yaml`) to catalog model architectures (`modulus`), licensing tiers, active vs. total parameters, multi-teacher distillation genealogy, and tamper-evident training data provenance.
+MoID (`moid`) provides a deterministic, machine-readable manifest (`moid.yaml`) that classifies AI software across three orthogonal axes—computational mechanism (`modulus`), functional stack position (`stack_role`), and domain ontology (`domain_focus`)—paired with cryptographic checkpoint and training-data provenance.
 
 ---
 
-## Key Capabilities
+## Core Taxonomy
 
-* **Polymorphic `modulus` Classification:** Supports `transformer`, `transformation_model`, `state_space`, `graph_network`, `neural_operator`, and `hybrid` paradigms without forcing transformer-specific assumptions.
-* **Sharded Checkpoint & MoE Support:** Tracks multi-file weight checksums (`safetensors`, `gguf`, `onnx`) alongside `total_count` and `active_count` parameters.
-* **Cryptographic Data Provenance:** Links `moid.yaml` to an external `ingestion_manifest.jsonl` validated by `ingestion.schema.json` and sealed with a SHA-256 digest.
-* **3-Tier Licensing + Openness Separation:** Pairs legal license tiers (`copycenter`, `copyleft`, `copyright`) with explicit availability flags (`open_weights`, `open_code`, `open_data`).
-
----
-
-## Quick Start
-
-Copy `template.moid.yaml` to the root of your repository as `moid.yaml`:
-
-~~~yaml
-$schema: "https://raw.githubusercontent.com/holosacred/moid/main/schema.json"
-moid_version: "1.0.0"
-
-modulus: "transformer"
-moid: "holosacred/aether-7b-v1"
-model_name: "Aether 7B Model"
-organization: "Open Nexus Lab"
-
-licensing:
-  tier: "copycenter"
-  spdx_license: "Apache-2.0"
-
-access_control:
-  open_weights: true
-  open_code: true
-  open_data: true
-  reproducibility: "full"
-
-domain_focus:
-  primary: "physics"
-  focus_weights:
-    language: 0.20
-    math: 0.30
-    physics: 0.50
-
-parameters:
-  total_count: 7240000000
-  active_count: 7240000000
-  base_precision: "bf16"
-
-checkpoints:
-  - path: "weights/model-00001-of-00001.safetensors"
-    format: "safetensors"
-    precision: "bf16"
-    quantization: "none"
-    sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-
-data_provenance:
-  total_tokens: 1800000000000
-  ingestion_catalog_file: "ingestion_manifest.jsonl"
-  ingestion_schema: "https://raw.githubusercontent.com/holosacred/moid/main/ingestion.schema.json"
-  catalog_file_hash_sha256: "7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a"
-~~~
+* **Mechanism (`modulus`):** `transformer`, `transformation_model`, `state_space`, `graph_network`, `neural_operator`, or `hybrid`.
+* **Stack Role (`stack_role`):** `generator`, `decision_policy`, `router`, `planner`, `verifier`, `critic_reward`, `world_model`, `perception_encoder`, `memory_indexer`, `orchestrator`, or `hybrid` (with optional `stack_spec` upstream/downstream graph links).
+* **Domain Focus (`domain_focus`):** Open-ended capability weights (`language`, `math`, `physics`, `code`, `robotics`, `vision`, etc.).
+* **Licensing & Access Separation:** Pairs 3-tier licensing (`copycenter`, `copyleft`, `copyright` + SPDX) with explicit availability flags (`open_weights`, `open_code`, `open_data`, `reproducibility`).
+* **Tamper-Evident Provenance:** Links `moid.yaml` to an external `ingestion_manifest.jsonl` validated against `ingestion.schema.json` and sealed with a SHA-256 digest.
 
 ---
 
 ## CLI Installation & Usage
 
-Install the native `moid` binary directly from GitHub:
+Install `moid` directly from GitHub:
 
 ~~~bash
 cargo install --git https://github.com/holosacred/moid --path cli
@@ -77,8 +27,34 @@ cargo install --git https://github.com/holosacred/moid --path cli
 Common commands:
 
 ~~~bash
-moid init --modulus transformer --id org/model-v1
-moid hash weights/*.safetensors
-moid seal ingestion_manifest.jsonl
+# Scaffold a manifest for a specific architecture and stack role
+moid init --modulus state_space --stack-role decision_policy --id org/policy-v1
+
+# Hash checkpoint shards in parallel and write directly into moid.yaml
+moid hash weights/*.safetensors --write moid.yaml
+
+# Generate checkpoints from an existing Hugging Face / Zenodo SHA256SUMS file
+moid hash --from-sha256sums SHA256SUMS --write moid.yaml
+
+# Validate and seal ingestion_manifest.jsonl directly into moid.yaml
+moid seal ingestion_manifest.jsonl --write moid.yaml
+
+# Validate schema, JSONL catalog, and local checkpoint hashes
 moid validate moid.yaml --verify-weights
+
+# Print summary card or diff two manifest versions
+moid inspect moid.yaml
+moid diff v1/moid.yaml v2/moid.yaml
+~~~
+
+---
+
+## Reusable GitHub Action
+
+Validate `moid.yaml` in any repository with two lines of workflow YAML:
+
+~~~yaml
+- uses: holosacred/moid@v0.2.0
+  with:
+    manifest: moid.yaml
 ~~~

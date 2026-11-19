@@ -1,0 +1,61 @@
+$schema: "https://raw.githubusercontent.com/holosacred/moid/v0.2.0/schema.json"
+moid_version: "0.2.0"
+modulus: "state_space"
+stack_role: "decision_policy"
+moid: "holosacred/arbiter-ssm-3b-v1"
+model_name: "Arbiter Selective-SSM Decision Policy 3B"
+organization: "Open Nexus Lab"
+version: "1.0.0"
+
+stack_spec:
+  secondary_roles: ["router", "orchestrator"]
+  decision_semantics: "discrete_action"
+  deterministic: true
+  action_space:
+    type: "categorical"
+    branches: ["delegate_lean4_verifier", "delegate_world_model", "emit_response"]
+  upstream_moids:
+    - "holosacred/sensory-encoder-v1"
+  downstream_moids:
+    - "holosacred/continuum-navier-stokes-v1"
+    - "holosacred/solis-dense-8b-v1"
+
+licensing:
+  tier: "copycenter"
+  spdx_license: "Apache-2.0"
+  allow_commercial: true
+
+access_control:
+  open_weights: true
+  open_code: true
+  open_data: true
+  reproducibility: "full"
+
+domain_focus:
+  primary: "robotics"
+  focus_weights:
+    math: 0.25
+    physics: 0.25
+    robotics: 0.50
+
+parameters:
+  total_count: 3100000000
+  active_count: 3100000000
+  base_precision: "bf16"
+
+state_space_spec:
+  state_dimension: 16
+  discretization_method: "zero_order_hold"
+  expansion_factor: 2.0
+
+checkpoints:
+  - path: "weights/arbiter-ssm-3b.safetensors"
+    format: "safetensors"
+    precision: "bf16"
+    quantization: "none"
+    sha256: "1f2e3d4c5b6a7988970685746352413029182736455463728190011223344556"
+
+data_provenance:
+  total_tokens: 950000000000
+  ingestion_catalog_file: "ingestion_manifest.jsonl"
+  catalog_file_hash_sha256: "7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a"

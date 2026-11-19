@@ -1,4 +1,4 @@
-name: Validate MoID Manifest
+name: Validate MoID Manifest & CLI
 
 on:
   push:
@@ -14,5 +14,13 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Validate template manifest
-        run: cargo run --release --manifest-path cli/Cargo.toml -- validate template.moid.yaml
+      - name: Run Rust integration tests
+        working-directory: cli
+        run: cargo test
+
+      - name: Validate template and example manifests
+        run: |
+          cargo run --release --manifest-path cli/Cargo.toml -- validate template.moid.yaml
+          for f in examples/*.moid.yaml; do
+            cargo run --release --manifest-path cli/Cargo.toml -- validate "$f"
+          done

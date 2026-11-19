@@ -1,17 +1,17 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://raw.githubusercontent.com/holosacred/moid/main/schema.json",
+  "$id": "https://raw.githubusercontent.com/holosacred/moid/v0.2.0/schema.json",
   "title": "ModulusIdentifierSpecification",
   "type": "object",
   "required": [
     "moid_version",
     "modulus",
+    "stack_role",
     "moid",
     "licensing",
     "access_control",
     "domain_focus",
     "parameters",
-    "checkpoints",
     "data_provenance"
   ],
   "properties": {
@@ -29,6 +29,58 @@
         "neural_operator",
         "hybrid"
       ]
+    },
+    "stack_role": {
+      "type": "string",
+      "enum": [
+        "generator",
+        "decision_policy",
+        "router",
+        "planner",
+        "verifier",
+        "critic_reward",
+        "world_model",
+        "perception_encoder",
+        "memory_indexer",
+        "orchestrator",
+        "hybrid"
+      ]
+    },
+    "stack_spec": {
+      "type": "object",
+      "properties": {
+        "secondary_roles": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "decision_semantics": {
+          "type": "string",
+          "enum": [
+            "discrete_action",
+            "continuous_control",
+            "routing_dispatch",
+            "symbolic_verdict",
+            "token_emission",
+            "field_evolution"
+          ]
+        },
+        "deterministic": { "type": "boolean" },
+        "action_space": { "type": "object" },
+        "upstream_moids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+$"
+          }
+        },
+        "downstream_moids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+$"
+          }
+        }
+      }
     },
     "moid": {
       "type": "string",
@@ -67,17 +119,14 @@
       "type": "object",
       "required": ["primary", "focus_weights"],
       "properties": {
-        "primary": {
-          "type": "string",
-          "enum": ["language", "math", "physics", "multimodal", "custom"]
-        },
+        "primary": { "type": "string", "minLength": 1 },
         "focus_weights": {
           "type": "object",
-          "required": ["language", "math", "physics"],
-          "properties": {
-            "language": { "type": "number", "minimum": 0, "maximum": 1 },
-            "math": { "type": "number", "minimum": 0, "maximum": 1 },
-            "physics": { "type": "number", "minimum": 0, "maximum": 1 }
+          "minProperties": 1,
+          "additionalProperties": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
           }
         }
       }
@@ -107,6 +156,31 @@
             "pattern": "^[a-fA-F0-9]{64}$"
           }
         }
+      }
+    },
+    "endpoint": {
+      "type": "object",
+      "required": ["provider", "model_identifier"],
+      "properties": {
+        "provider": { "type": "string" },
+        "model_identifier": { "type": "string" },
+        "api_uri": { "type": "string" }
+      }
+    },
+    "state_space_spec": {
+      "type": "object",
+      "properties": {
+        "state_dimension": { "type": "integer", "minimum": 1 },
+        "discretization_method": { "type": "string" },
+        "expansion_factor": { "type": "number" }
+      }
+    },
+    "graph_network_spec": {
+      "type": "object",
+      "properties": {
+        "message_passing_layers": { "type": "integer", "minimum": 1 },
+        "edge_feature_dim": { "type": "integer", "minimum": 0 },
+        "aggregation": { "type": "string" }
       }
     },
     "distillation": {
@@ -168,6 +242,20 @@
     }
   },
   "allOf": [
+    {
+      "if": {
+        "properties": {
+          "access_control": {
+            "properties": { "open_weights": { "const": true } },
+            "required": ["open_weights"]
+          }
+        },
+        "required": ["access_control"]
+      },
+      "then": {
+        "required": ["checkpoints"]
+      }
+    },
     {
       "if": {
         "properties": { "modulus": { "const": "transformer" } }

@@ -1,0 +1,31 @@
+name: "Validate MoID Manifest"
+description: "Validate moid.yaml manifests, checkpoint hashes, and JSONL ingestion catalogs using moid-cli"
+inputs:
+  manifest:
+    description: "Path to moid.yaml"
+    required: false
+    default: "moid.yaml"
+  verify-weights:
+    description: "Recompute and verify SHA-256 hashes of local checkpoint files"
+    required: false
+    default: "false"
+  version:
+    description: "moid-cli release tag to download (e.g., v0.2.0)"
+    required: false
+    default: "v0.2.0"
+runs:
+  using: "composite"
+  steps:
+    - name: Download moid-cli binary
+      shell: bash
+      run: |
+        curl -fsSL "https://github.com/holosacred/moid/releases/download/${{ inputs.version }}/moid-linux-x86_64" -o /usr/local/bin/moid
+        chmod +x /usr/local/bin/moid
+    - name: Run moid validate
+      shell: bash
+      run: |
+        if [ "${{ inputs.verify-weights }}" = "true" ]; then
+          moid validate "${{ inputs.manifest }}" --verify-weights
+        else
+          moid validate "${{ inputs.manifest }}"
+        fi
