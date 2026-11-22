@@ -1,42 +1,69 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://raw.githubusercontent.com/holosacred/moid/main/ingestion.schema.json",
-  "title": "MoIDIngestionRecord",
-  "description": "Schema for each JSON object line inside ingestion_manifest.jsonl",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moid.info/schemas/v0.3.0-rc4/ingestion.schema.json",
+  "title": "MoID Ingestion Catalog Record v0.3.0-rc4",
   "type": "object",
-  "required": [
-    "source_id",
-    "source_uri",
-    "media_category",
-    "content_hash_sha256",
-    "license_tier",
-    "spdx_license"
-  ],
+  "required": ["record_id", "record_level", "source_category", "modalities", "license_status"],
+  "patternProperties": { "^x-": {} },
   "properties": {
-    "source_id": { "type": "string" },
-    "source_uri": { "type": "string" },
-    "title": { "type": "string" },
-    "media_category": {
-      "type": "string",
-      "description": "Primary classification from the Media Classification System"
-    },
-    "media_sub_category": { "type": "string" },
-    "content_hash_sha256": {
-      "type": "string",
-      "pattern": "^[a-fA-F0-9]{64}$"
+    "record_id": { "type": "string", "minLength": 1 },
+    "parent_record_id": { "type": "string", "minLength": 1 },
+    "record_level": { "enum": ["corpus", "dataset", "crawl_snapshot", "shard", "document"] },
+    "source_category": { "enum": ["public_dataset", "private_dataset", "web_crawl", "user_data", "synthetic"] },
+    "locator": { "type": "string", "format": "uri" },
+    "retrieved_at": { "type": "string", "format": "date-time" },
+    "digest": { "$ref": "common.schema.json#/$defs/digest" },
+    "digest_scope": { "enum": ["raw_bytes", "processed_bytes", "tokenized_bytes"] },
+    "modalities": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "common.schema.json#/$defs/modality" }
     },
     "token_count": { "type": "integer", "minimum": 0 },
     "sample_count": { "type": "integer", "minimum": 0 },
-    "epoch_weight": { "type": "number", "minimum": 0 },
-    "split": {
-      "type": "string",
-      "enum": ["pretrain", "midtrain", "sft", "distillation", "alignment", "eval"]
+    "epochs": { "type": "number", "minimum": 0 },
+    "sampling_weight": { "type": "number", "minimum": 0, "maximum": 1 },
+    "split": { "enum": ["pretrain", "midtrain", "sft", "distillation", "alignment", "eval"] },
+    "domain_tags": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "top_domains": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "license_status": { "enum": ["spdx", "custom", "public_domain", "mixed", "unlicensed", "unknown"] },
+    "spdx_expression": { "type": "string", "minLength": 1 },
+    "rights_reservations": {
+      "type": "object",
+      "properties": {
+        "robots_txt_policy": { "type": "string" },
+        "tdm_opt_out_protocol": { "type": "string" },
+        "filtering_notes": { "type": "string" },
+        "observed_at": { "type": "string", "format": "date" }
+      },
+      "unevaluatedProperties": false
     },
-    "license_tier": {
-      "type": "string",
-      "enum": ["copycenter", "copyleft", "copyright"]
+    "synthetic": {
+      "type": "object",
+      "required": ["is_synthetic"],
+      "properties": {
+        "is_synthetic": { "type": "boolean" },
+        "generator_ref": { "$ref": "common.schema.json#/$defs/externalTargetRef" },
+        "curation_method": { "type": "string" }
+      },
+      "unevaluatedProperties": false
     },
-    "spdx_license": { "type": "string" },
-    "domain_tag": { "type": "string" }
-  }
+    "processing_summary": { "type": "string" }
+  },
+  "allOf": [
+    {
+      "if": { "required": ["license_status"], "properties": { "license_status": { "const": "spdx" } } },
+      "then": { "required": ["spdx_expression"] }
+    },
+    {
+      "if": { "required": ["digest"] },
+      "then": { "required": ["digest_scope"] }
+    },
+    {
+      "if": { "required": ["record_level"], "properties": { "record_level": { "enum": ["shard", "document"] } } },
+      "then": { "required": ["digest", "digest_scope"] }
+    }
+  ],
+  "unevaluatedProperties": false
 }

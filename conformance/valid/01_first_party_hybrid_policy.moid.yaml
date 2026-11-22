@@ -1,0 +1,196 @@
+$schema: "https://moid.info/schemas/v0.3.0-rc4/moid.schema.json"
+spec_version: "0.3.0-rc4"
+manifest_status: "draft"
+moid: "holosacred/arbiter-nano-hybrid"
+name: "Arbiter Nano Hybrid SSM-Transformer Policy"
+model_version: "0.3.0-rc4"
+released_at: "2026-11-22"
+
+publisher:
+  namespace: "holosacred"
+  display_name: "Holosacred Research"
+  url: "https://github.com/holosacred"
+  binding_uri: "https://moid.info/.well-known/moid-publisher.json"
+
+manifest_assertion:
+  asserted_by:
+    name: "holosacred"
+    identity:
+      kind: "pgp"
+      fingerprint: "0123456789ABCDEF0123456789ABCDEF01234567"
+  assertion_type: "first_party"
+  asserted_at: "2026-11-22T12:00:00Z"
+
+modulus:
+  disclosure_status: "disclosed"
+  family: "hybrid"
+  paradigm: "autoregressive"
+  model_type: "ArbiterHybridForCausalLM"
+  components:
+    - role: "sequence_mixer_ssm"
+      family: "ssm"
+    - role: "global_attention"
+      family: "transformer"
+  transformer_spec:
+    topology: "decoder_only"
+    num_layers: 6
+    hidden_size: 2048
+    num_attention_heads: 16
+    num_kv_heads: 4
+    vocab_size: 65536
+    max_position_embeddings: 32768
+  ssm_spec:
+    variant: "mamba2"
+    state_size: 128
+    discretization_method: "zero_order_hold"
+    num_layers: 18
+  moe_spec:
+    num_experts: 8
+    active_experts_per_token: 2
+    shared_experts: 1
+    routing_mechanism: "aux_loss_free_top_k"
+
+stack_roles:
+  primary_role: "decision_policy"
+  secondary_roles: ["orchestrator"]
+
+stack_spec:
+  decision_semantics: "discrete_action"
+  deterministic: true
+  action_space:
+    type: "categorical"
+    branches: ["delegate_lean4_verifier", "delegate_world_model", "emit_response"]
+  runtime_inputs:
+    - moid: "holosacred/sensory-encoder"
+      interface: "latent-stream-v1"
+      min_version: "0.2.0"
+
+modalities:
+  input: ["text", "code", "sensor"]
+  output: ["text", "code"]
+
+domain_focus:
+  disclosure_status: "disclosed"
+  basis: "declared_intent"
+  primary: "robotics"
+  focus_weights:
+    robotics: 0.50
+    math: 0.25
+    code: 0.25
+
+parameters:
+  disclosure_status: "disclosed"
+  total: 1850000000
+  active: 620000000
+  base_precision: "bf16"
+
+runtime:
+  min_vram_gb: 6
+  recommended_max_context: 32768
+  supported_engines: ["llama.cpp", "vllm"]
+  tokenizer_config_digest: "placeholder:tokenizer-config-json"
+
+lineage:
+  disclosure_status: "disclosed"
+  weight_initialization: "random"
+  derivations:
+    - id: "act-cross-paradigm-distill"
+      activity_type: "distill"
+      performed_by: "holosacred"
+      recipe_digest: "placeholder:distill-recipe-yaml"
+      inputs:
+        - role: "teacher"
+          target_ref:
+            moid: "holosacred/arbiter-teacher-12b"
+            model_version: "0.2.0"
+            manifest_digest: "placeholder:teacher-12b-manifest"
+          loss_targets: ["kl_logits_t2.0", "hidden_cosine"]
+          contribution:
+            value: 0.70
+            basis: "loss_weight"
+        - role: "training_data"
+          catalog_record_ids: ["shard-code-01", "shard-robotics-01"]
+      produces: ["bf16-primary"]
+      distillation_spec:
+        mode: "cross_paradigm"
+        feature_alignment:
+          adapter_type: "linear_projection_2048_to_4096"
+          layer_mapping: "student[6,12,18,24] <- teacher[10,20,30,40]"
+    - id: "act-gguf-q4km-quant"
+      activity_type: "quantize"
+      performed_by: "holosacred"
+      inputs:
+        - role: "quantize_source"
+          target_ref:
+            local_checkpoint_id: "bf16-primary"
+      produces: ["gguf-q4km"]
+      quantization_spec:
+        method: "gguf_k_quant_imatrix"
+        nominal_bits: 4
+        effective_bits_per_weight: 4.5
+        tool: "llama.cpp"
+        tool_version: "b4514"
+
+checkpoints:
+  - id: "bf16-primary"
+    artifact_kind: "full_weights"
+    format: "safetensors"
+    precision: "bf16"
+    files:
+      - path: "weights/model-00001-of-00001.safetensors"
+        digest: "placeholder:bf16-primary-shard1"
+        byte_size: 3700124672
+  - id: "gguf-q4km"
+    artifact_kind: "full_weights"
+    format: "gguf"
+    precision: "int4"
+    quantization_scheme: "gguf:Q4_K_M"
+    files:
+      - path: "weights/arbiter-nano-hybrid-Q4_K_M.gguf"
+        digest: "placeholder:gguf-q4km-file"
+        byte_size: 1184290816
+
+licensing:
+  disclosure_status: "disclosed"
+  spdx_expression: "Apache-2.0"
+  component_licenses:
+    weights: "Apache-2.0"
+    training_code: "Apache-2.0"
+    inference_code: "Apache-2.0"
+    data_information: "CC-BY-4.0"
+    training_data: "Apache-2.0"
+
+openness:
+  weights: "public"
+  training_code: "public"
+  inference_code: "public"
+  data_information: "public"
+  training_data: "public"
+  self_declared_alignment:
+    osaid_1_0: true
+    mof_class: "class_i_open_science"
+
+data_provenance:
+  disclosure_status: "disclosed"
+  ingestion_catalog:
+    path: "./ingestion_manifest.jsonl"
+    digest: "placeholder:ingestion-catalog-file"
+    schema_version: "0.3.0-rc4"
+    tokenizer_ref:
+      moid: "holosacred/arbiter-bpe-64k"
+      digest: "placeholder:arbiter-bpe-64k-tokenizer"
+  declared_summary:
+    total_tokens: 120000000000
+    domain_distribution:
+      code: 0.45
+      math: 0.35
+      robotics_telemetry: 0.20
+    contains_synthetic_data: "yes"
+
+reproducibility:
+  level: "full"
+  code_repo: "https://github.com/holosacred/arbiter-train"
+  code_commit: "placeholder:git-commit-arbiter-train"
+  config_digest: "placeholder:train-config-yaml"
+  hardware_summary: "8x H100 80GB SXM5, 96 hours"
+  seeds: [42, 1337]

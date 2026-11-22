@@ -1,288 +1,903 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://raw.githubusercontent.com/holosacred/moid/v0.2.0/schema.json",
-  "title": "ModulusIdentifierSpecification",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moid.info/schemas/v0.3.0-rc4/moid.schema.json",
+  "title": "MoID Model Manifest Specification v0.3.0-rc4",
   "type": "object",
   "required": [
-    "moid_version",
-    "modulus",
-    "stack_role",
-    "moid",
-    "licensing",
-    "access_control",
-    "domain_focus",
-    "parameters",
-    "data_provenance"
+    "spec_version", "manifest_status", "moid", "name", "model_version",
+    "publisher", "manifest_assertion", "modulus", "stack_roles",
+    "modalities", "domain_focus", "parameters", "lineage",
+    "licensing", "openness", "data_provenance"
   ],
+  "patternProperties": { "^x-": {} },
   "properties": {
-    "moid_version": {
-      "type": "string",
-      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    "$schema": { "type": "string", "format": "uri", "x-verification": { "verifier": "none", "assurance": "self_declared" } },
+    "spec_version": { "const": "0.3.0-rc4", "x-verification": { "verifier": "none", "assurance": "self_declared" } },
+    "manifest_status": { "enum": ["draft", "release", "deprecated"], "x-verification": { "verifier": "none", "assurance": "self_declared" } },
+    "moid": { "$ref": "common.schema.json#/$defs/moidSlug", "x-verification": { "verifier": "none", "assurance": "self_declared" } },
+    "name": { "type": "string", "minLength": 1, "x-verification": { "verifier": "none", "assurance": "self_declared" } },
+    "model_version": { "type": "string", "minLength": 1, "x-verification": { "verifier": "none", "assurance": "self_declared" } },
+    "released_at": { "type": "string", "format": "date", "x-verification": { "verifier": "none", "assurance": "self_declared" } },
+    "source_ids": {
+      "type": "object",
+      "x-verification": { "verifier": "online", "assurance": "resolvability" },
+      "additionalProperties": { "type": "string", "minLength": 1 }
+    },
+    "publisher": {
+      "type": "object",
+      "x-verification": { "verifier": "online", "assurance": "self_declared" },
+      "required": ["namespace", "display_name"],
+      "properties": {
+        "namespace": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,62}$" },
+        "display_name": { "type": "string", "minLength": 1 },
+        "url": { "type": "string", "format": "uri" },
+        "binding_uri": { "type": "string", "format": "uri" }
+      },
+      "unevaluatedProperties": false
+    },
+    "manifest_assertion": {
+      "type": "object",
+      "x-verification": { "verifier": "signature", "assurance": "authorship" },
+      "required": ["asserted_by", "assertion_type", "asserted_at"],
+      "properties": {
+        "asserted_by": {
+          "type": "object",
+          "required": ["name"],
+          "properties": {
+            "name": { "type": "string", "minLength": 1 },
+            "identity": { "$ref": "common.schema.json#/$defs/identity" }
+          },
+          "unevaluatedProperties": false
+        },
+        "assertion_type": { "enum": ["first_party", "third_party_description"] },
+        "asserted_at": { "type": "string", "format": "date-time" },
+        "attestation": {
+          "type": "object",
+          "required": ["format", "path", "canonicalization"],
+          "properties": {
+            "format": { "enum": ["dsse-in-toto-v1", "sigstore-bundle-v0.3", "pgp-detached-v1", "ssh-sig-v1"] },
+            "path": { "type": "string", "minLength": 1 },
+            "predicate_type": { "const": "https://moid.info/attestations/manifest/v0.3" },
+            "canonicalization": { "const": "rfc8785-jcs" }
+          },
+          "if": { "required": ["format"], "properties": { "format": { "enum": ["dsse-in-toto-v1", "sigstore-bundle-v0.3"] } } },
+          "then": { "required": ["predicate_type"] },
+          "unevaluatedProperties": false
+        },
+        "evidence": { "$ref": "common.schema.json#/$defs/evidenceList" }
+      },
+      "if": { "required": ["attestation"] },
+      "then": { "properties": { "asserted_by": { "required": ["identity"] } } },
+      "unevaluatedProperties": false
     },
     "modulus": {
-      "type": "string",
-      "enum": [
-        "transformer",
-        "transformation_model",
-        "state_space",
-        "graph_network",
-        "neural_operator",
-        "hybrid"
-      ]
+      "type": "object",
+      "x-verification": { "verifier": "local-file", "assurance": "consistency" },
+      "required": ["disclosure_status"],
+      "patternProperties": { "^x-": {} },
+      "properties": {
+        "disclosure_status": { "$ref": "common.schema.json#/$defs/disclosureStatus" },
+        "family": { "enum": ["transformer", "ssm", "cnn", "rnn", "gnn", "neural_operator", "mlp", "hybrid"] },
+        "paradigm": {
+          "enum": [
+            "autoregressive", "masked_lm", "diffusion", "flow_matching",
+            "gan", "vae", "ebm", "discriminative", "rl_policy",
+            "multimodal_joint", "operator_mapping"
+          ]
+        },
+        "model_type": { "type": "string" },
+        "components": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "type": "object",
+            "required": ["role", "family"],
+            "properties": {
+              "role": { "type": "string", "minLength": 1 },
+              "family": { "enum": ["transformer", "ssm", "cnn", "rnn", "gnn", "neural_operator", "mlp"] },
+              "layer_count": { "type": "integer", "minimum": 1 }
+            },
+            "unevaluatedProperties": false
+          }
+        },
+        "transformer_spec": {
+          "type": "object",
+          "x-verification": { "verifier": "local-file", "assurance": "consistency" },
+          "properties": {
+            "topology": { "enum": ["decoder_only", "encoder_only", "encoder_decoder"] },
+            "num_layers": { "type": "integer", "minimum": 1 },
+            "hidden_size": { "type": "integer", "minimum": 1 },
+            "num_attention_heads": { "type": "integer", "minimum": 1 },
+            "num_kv_heads": { "type": "integer", "minimum": 1 },
+            "vocab_size": { "type": "integer", "minimum": 1 },
+            "max_position_embeddings": { "type": "integer", "minimum": 1 }
+          },
+          "unevaluatedProperties": false
+        },
+        "moe_spec": {
+          "type": "object",
+          "x-verification": { "verifier": "local-file", "assurance": "consistency" },
+          "required": ["num_experts", "active_experts_per_token"],
+          "properties": {
+            "num_experts": { "type": "integer", "minimum": 2 },
+            "active_experts_per_token": { "type": "integer", "minimum": 1 },
+            "shared_experts": { "type": "integer", "minimum": 0 },
+            "routing_mechanism": { "type": "string" }
+          },
+          "unevaluatedProperties": false
+        },
+        "ssm_spec": {
+          "type": "object",
+          "x-verification": { "verifier": "local-file", "assurance": "consistency" },
+          "properties": {
+            "variant": { "type": "string" },
+            "state_size": { "type": "integer", "minimum": 1 },
+            "discretization_method": { "type": "string" },
+            "num_layers": { "type": "integer", "minimum": 1 }
+          },
+          "unevaluatedProperties": false
+        },
+        "gnn_spec": {
+          "type": "object",
+          "x-verification": { "verifier": "none", "assurance": "self_declared" },
+          "properties": {
+            "message_passing_layers": { "type": "integer", "minimum": 1 },
+            "edge_feature_dim": { "type": "integer", "minimum": 0 },
+            "aggregation": { "type": "string" }
+          },
+          "unevaluatedProperties": false
+        },
+        "neural_operator_spec": {
+          "type": "object",
+          "x-verification": { "verifier": "none", "assurance": "self_declared" },
+          "properties": {
+            "operator_kind": { "enum": ["fno", "deeponet", "gno", "uno", "cno", "other"] },
+            "spatial_dimensions": { "type": "integer", "minimum": 1 },
+            "modes": { "type": "array", "items": { "type": "integer", "minimum": 1 } }
+          },
+          "unevaluatedProperties": false
+        },
+        "evidence": { "$ref": "common.schema.json#/$defs/evidenceList" }
+      },
+      "allOf": [
+        {
+          "if": { "required": ["disclosure_status"], "properties": { "disclosure_status": { "const": "disclosed" } } },
+          "then": { "required": ["family", "paradigm"] }
+        },
+        {
+          "if": { "required": ["family"], "properties": { "family": { "const": "hybrid" } } },
+          "then": { "required": ["components"] }
+        }
+      ],
+      "unevaluatedProperties": false
     },
-    "stack_role": {
-      "type": "string",
-      "enum": [
-        "generator",
-        "decision_policy",
-        "router",
-        "planner",
-        "verifier",
-        "critic_reward",
-        "world_model",
-        "perception_encoder",
-        "memory_indexer",
-        "orchestrator",
-        "hybrid"
-      ]
+    "stack_roles": {
+      "type": "object",
+      "x-verification": { "verifier": "none", "assurance": "self_declared" },
+      "required": ["primary_role"],
+      "properties": {
+        "primary_role": { "$ref": "#/$defs/stackRole" },
+        "secondary_roles": { "type": "array", "items": { "$ref": "#/$defs/stackRole" }, "uniqueItems": true }
+      },
+      "unevaluatedProperties": false
     },
     "stack_spec": {
       "type": "object",
+      "x-verification": { "verifier": "none", "assurance": "self_declared" },
+      "patternProperties": { "^x-": {} },
       "properties": {
-        "secondary_roles": {
-          "type": "array",
-          "items": { "type": "string" }
-        },
         "decision_semantics": {
-          "type": "string",
-          "enum": [
-            "discrete_action",
-            "continuous_control",
-            "routing_dispatch",
-            "symbolic_verdict",
-            "token_emission",
-            "field_evolution"
-          ]
+          "enum": ["discrete_action", "continuous_control", "routing_dispatch", "symbolic_verdict", "token_emission", "field_evolution", "embedding_projection"]
         },
         "deterministic": { "type": "boolean" },
         "action_space": { "type": "object" },
-        "upstream_moids": {
+        "runtime_inputs": {
           "type": "array",
           "items": {
-            "type": "string",
-            "pattern": "^[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+$"
-          }
-        },
-        "downstream_moids": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "pattern": "^[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+$"
+            "type": "object",
+            "required": ["moid"],
+            "properties": {
+              "moid": { "$ref": "common.schema.json#/$defs/moidSlug" },
+              "interface": { "type": "string", "minLength": 1 },
+              "min_version": { "type": "string", "minLength": 1 }
+            },
+            "unevaluatedProperties": false
           }
         }
-      }
+      },
+      "unevaluatedProperties": false
     },
-    "moid": {
-      "type": "string",
-      "pattern": "^[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+$"
-    },
-    "model_name": { "type": "string" },
-    "transformation_name": { "type": "string" },
-    "organization": { "type": "string" },
-    "version": { "type": "string" },
-    "licensing": {
+    "modalities": {
       "type": "object",
-      "required": ["tier", "spdx_license"],
+      "x-verification": { "verifier": "none", "assurance": "self_declared" },
+      "required": ["input", "output"],
       "properties": {
-        "tier": {
-          "type": "string",
-          "enum": ["copycenter", "copyleft", "copyright"]
-        },
-        "spdx_license": { "type": "string", "minLength": 1 },
-        "allow_commercial": { "type": "boolean" }
-      }
-    },
-    "access_control": {
-      "type": "object",
-      "required": ["open_weights", "open_code", "open_data", "reproducibility"],
-      "properties": {
-        "open_weights": { "type": "boolean" },
-        "open_code": { "type": "boolean" },
-        "open_data": { "type": "boolean" },
-        "reproducibility": {
-          "type": "string",
-          "enum": ["full", "partial", "blackbox"]
-        }
-      }
+        "input": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "common.schema.json#/$defs/modality" } },
+        "output": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "common.schema.json#/$defs/modality" } }
+      },
+      "unevaluatedProperties": false
     },
     "domain_focus": {
       "type": "object",
-      "required": ["primary", "focus_weights"],
+      "x-verification": { "verifier": "none", "assurance": "self_declared" },
+      "required": ["disclosure_status"],
       "properties": {
+        "disclosure_status": { "$ref": "common.schema.json#/$defs/disclosureStatus" },
+        "basis": { "enum": ["declared_intent", "evaluated_benchmark", "training_mix_proxy"] },
         "primary": { "type": "string", "minLength": 1 },
         "focus_weights": {
           "type": "object",
           "minProperties": 1,
-          "additionalProperties": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 1
-          }
+          "additionalProperties": { "type": "number", "minimum": 0, "maximum": 1 }
+        },
+        "evidence": { "$ref": "common.schema.json#/$defs/evidenceList" }
+      },
+      "allOf": [
+        {
+          "if": { "required": ["disclosure_status"], "properties": { "disclosure_status": { "const": "disclosed" } } },
+          "then": { "required": ["basis", "primary", "focus_weights"] }
+        },
+        {
+          "if": { "required": ["basis"], "properties": { "basis": { "const": "evaluated_benchmark" } } },
+          "then": { "required": ["evidence"], "properties": { "evidence": { "minItems": 1 } } }
         }
-      }
+      ],
+      "unevaluatedProperties": false
     },
     "parameters": {
       "type": "object",
-      "required": ["total_count", "base_precision"],
+      "x-verification": { "verifier": "local-file", "assurance": "consistency" },
+      "required": ["disclosure_status"],
       "properties": {
-        "total_count": { "type": "integer", "minimum": 0 },
-        "active_count": { "type": "integer", "minimum": 0 },
-        "base_precision": { "type": "string" }
-      }
+        "disclosure_status": { "$ref": "common.schema.json#/$defs/disclosureStatus" },
+        "total": { "type": "integer", "minimum": 1 },
+        "active": { "type": "integer", "minimum": 1 },
+        "base_precision": { "type": "string" },
+        "evidence": { "$ref": "common.schema.json#/$defs/evidenceList" }
+      },
+      "if": { "required": ["disclosure_status"], "properties": { "disclosure_status": { "const": "disclosed" } } },
+      "then": { "required": ["total"] },
+      "unevaluatedProperties": false
+    },
+    "runtime": {
+      "type": "object",
+      "x-verification": { "verifier": "local-file", "assurance": "integrity" },
+      "properties": {
+        "min_vram_gb": { "type": "number", "minimum": 0, "x-verification": { "verifier": "none", "assurance": "self_declared" } },
+        "recommended_max_context": { "type": "integer", "minimum": 1, "x-verification": { "verifier": "none", "assurance": "self_declared" } },
+        "recommended_max_output": { "type": "integer", "minimum": 1, "x-verification": { "verifier": "none", "assurance": "self_declared" } },
+        "chat_template": { "type": "string", "x-verification": { "verifier": "none", "assurance": "self_declared" } },
+        "supported_engines": { "type": "array", "items": { "type": "string" }, "x-verification": { "verifier": "none", "assurance": "self_declared" } },
+        "chat_template_digest": { "$ref": "common.schema.json#/$defs/digest", "x-verification": { "verifier": "local-file", "assurance": "integrity" } },
+        "tokenizer_config_digest": { "$ref": "common.schema.json#/$defs/digest", "x-verification": { "verifier": "local-file", "assurance": "integrity" } }
+      },
+      "unevaluatedProperties": false
+    },
+    "lineage": {
+      "type": "object",
+      "x-verification": { "verifier": "online", "assurance": "resolvability" },
+      "required": ["disclosure_status"],
+      "properties": {
+        "disclosure_status": { "$ref": "common.schema.json#/$defs/disclosureStatus" },
+        "weight_initialization": { "enum": ["random", "from_model", "unknown"] },
+        "derivations": { "type": "array", "items": { "$ref": "#/$defs/derivationActivity" } },
+        "evidence": { "$ref": "common.schema.json#/$defs/evidenceList" }
+      },
+      "allOf": [
+        {
+          "if": { "required": ["disclosure_status"], "properties": { "disclosure_status": { "const": "disclosed" } } },
+          "then": {
+            "required": ["weight_initialization"],
+            "properties": { "weight_initialization": { "enum": ["random", "from_model"] } }
+          }
+        },
+        {
+          "if": { "required": ["weight_initialization"], "properties": { "weight_initialization": { "const": "from_model" } } },
+          "then": {
+            "required": ["derivations"],
+            "properties": {
+              "derivations": {
+                "minItems": 1,
+                "contains": {
+                  "properties": {
+                    "inputs": {
+                      "contains": {
+                        "required": ["role"],
+                        "properties": { "role": { "enum": ["base_weights", "merge_parent", "quantize_source"] } }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": { "required": ["weight_initialization"], "properties": { "weight_initialization": { "const": "random" } } },
+          "then": {
+            "properties": {
+              "derivations": {
+                "items": {
+                  "properties": {
+                    "inputs": {
+                      "items": {
+                        "if": {
+                          "required": ["role"],
+                          "properties": { "role": { "enum": ["base_weights", "merge_parent", "quantize_source"] } }
+                        },
+                        "then": { "properties": { "target_ref": { "required": ["local_checkpoint_id"] } } }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
     },
     "checkpoints": {
       "type": "array",
+      "x-verification": { "verifier": "local-file", "assurance": "integrity" },
       "minItems": 1,
       "items": {
         "type": "object",
-        "required": ["path", "format", "precision", "sha256"],
+        "required": ["id", "artifact_kind", "format", "precision", "files"],
+        "patternProperties": { "^x-": {} },
         "properties": {
-          "path": { "type": "string" },
-          "format": { "type": "string" },
-          "precision": { "type": "string" },
-          "quantization": { "type": "string" },
-          "sha256": {
-            "type": "string",
-            "pattern": "^[a-fA-F0-9]{64}$"
+          "id": { "type": "string", "minLength": 1 },
+          "artifact_kind": { "enum": ["full_weights", "adapter", "imatrix", "tokenizer", "config", "other"] },
+          "format": { "enum": ["safetensors", "gguf", "onnx", "pytorch_bin", "hdf5", "mlx", "exl2", "flax_msgpack", "other"] },
+          "precision": { "enum": ["fp32", "fp16", "bf16", "fp8", "int8", "int4", "int3", "int2", "mixed", "unknown"] },
+          "quantization_scheme": { "type": "string" },
+          "files": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": ["path"],
+              "properties": {
+                "path": { "type": "string", "minLength": 1 },
+                "digest": { "$ref": "common.schema.json#/$defs/digest" },
+                "byte_size": { "type": "integer", "minimum": 1 }
+              },
+              "unevaluatedProperties": false
+            }
           }
-        }
+        },
+        "unevaluatedProperties": false
       }
     },
     "endpoint": {
       "type": "object",
+      "x-verification": { "verifier": "online", "assurance": "resolvability" },
       "required": ["provider", "model_identifier"],
       "properties": {
-        "provider": { "type": "string" },
-        "model_identifier": { "type": "string" },
-        "api_uri": { "type": "string" }
-      }
+        "provider": { "type": "string", "minLength": 1 },
+        "model_identifier": { "type": "string", "minLength": 1 },
+        "api_uri": { "type": "string", "format": "uri" }
+      },
+      "unevaluatedProperties": false
     },
-    "state_space_spec": {
+    "licensing": {
       "type": "object",
+      "x-verification": { "verifier": "online", "assurance": "resolvability" },
+      "required": ["disclosure_status"],
       "properties": {
-        "state_dimension": { "type": "integer", "minimum": 1 },
-        "discretization_method": { "type": "string" },
-        "expansion_factor": { "type": "number" }
-      }
-    },
-    "graph_network_spec": {
-      "type": "object",
-      "properties": {
-        "message_passing_layers": { "type": "integer", "minimum": 1 },
-        "edge_feature_dim": { "type": "integer", "minimum": 0 },
-        "aggregation": { "type": "string" }
-      }
-    },
-    "distillation": {
-      "type": "object",
-      "required": ["is_distilled"],
-      "properties": {
-        "is_distilled": { "type": "boolean" },
-        "distillation_type": { "type": "string" },
-        "loss_targets": {
-          "type": "array",
-          "items": { "type": "string" }
+        "disclosure_status": { "$ref": "common.schema.json#/$defs/disclosureStatus" },
+        "spdx_expression": { "type": "string", "minLength": 1 },
+        "component_licenses": {
+          "type": "object",
+          "properties": {
+            "weights": { "type": "string", "minLength": 1 },
+            "training_code": { "type": "string", "minLength": 1 },
+            "inference_code": { "type": "string", "minLength": 1 },
+            "data_information": { "type": "string", "minLength": 1 },
+            "training_data": { "type": "string", "minLength": 1 }
+          },
+          "unevaluatedProperties": false
         },
-        "compression_ratio": { "type": "string" },
-        "teachers": {
+        "custom_license_url": { "type": "string", "format": "uri" },
+        "upstream_inherited_licenses": { "type": "array", "items": { "type": "string" } },
+        "restrictions": {
           "type": "array",
-          "items": {
-            "type": "object",
-            "required": ["teacher_moid", "modulus"],
-            "properties": {
-              "teacher_moid": { "type": "string" },
-              "modulus": { "type": "string" },
-              "weight_contribution": { "type": "number", "minimum": 0, "maximum": 1 }
-            }
-          }
-        }
+          "items": { "enum": ["non_commercial", "no_distillation", "no_derivative_models", "geographic", "mau_cap", "acceptable_use_policy"] },
+          "uniqueItems": true
+        },
+        "evidence": { "$ref": "common.schema.json#/$defs/evidenceList" }
       },
-      "if": {
-        "properties": { "is_distilled": { "const": true } }
-      },
-      "then": {
-        "required": ["distillation_type", "teachers"]
-      }
+      "unevaluatedProperties": false
     },
-    "runtime": {
+    "openness": {
       "type": "object",
+      "x-verification": { "verifier": "none", "assurance": "self_declared" },
+      "required": ["weights", "training_code", "inference_code", "data_information", "training_data"],
       "properties": {
-        "min_vram_gb": { "type": "number", "minimum": 0 },
-        "context_window": { "type": "integer", "minimum": 1 },
-        "chat_template": { "type": "string" },
-        "supported_engines": {
-          "type": "array",
-          "items": { "type": "string" }
+        "weights": { "$ref": "common.schema.json#/$defs/availabilityState" },
+        "training_code": { "$ref": "common.schema.json#/$defs/availabilityState" },
+        "inference_code": { "$ref": "common.schema.json#/$defs/availabilityState" },
+        "data_information": { "$ref": "common.schema.json#/$defs/availabilityState" },
+        "training_data": { "$ref": "common.schema.json#/$defs/availabilityState" },
+        "self_declared_alignment": {
+          "type": "object",
+          "properties": {
+            "osaid_1_0": { "type": "boolean" },
+            "mof_class": { "enum": ["class_i_open_science", "class_ii_open_tooling", "class_iii_open_model", "none"] }
+          },
+          "unevaluatedProperties": false
         }
-      }
+      },
+      "unevaluatedProperties": false
     },
     "data_provenance": {
       "type": "object",
-      "required": ["ingestion_catalog_file", "catalog_file_hash_sha256"],
+      "x-verification": { "verifier": "catalog", "assurance": "consistency" },
+      "required": ["disclosure_status"],
       "properties": {
-        "total_tokens": { "type": "integer", "minimum": 0 },
-        "total_field_snapshots": { "type": "integer", "minimum": 0 },
-        "ingestion_catalog_file": { "type": "string" },
-        "ingestion_schema": { "type": "string" },
-        "catalog_file_hash_sha256": {
-          "type": "string",
-          "pattern": "^[a-fA-F0-9]{64}$"
-        }
-      }
+        "disclosure_status": { "$ref": "common.schema.json#/$defs/disclosureStatus" },
+        "ingestion_catalog": {
+          "type": "object",
+          "required": ["path", "digest", "schema_version"],
+          "properties": {
+            "path": { "type": "string", "minLength": 1 },
+            "digest": { "$ref": "common.schema.json#/$defs/digest" },
+            "schema_version": { "const": "0.3.0-rc4" },
+            "tokenizer_ref": { "$ref": "common.schema.json#/$defs/tokenizerRef" }
+          },
+          "unevaluatedProperties": false
+        },
+        "declared_summary": {
+          "type": "object",
+          "properties": {
+            "total_tokens": { "type": "integer", "minimum": 0 },
+            "total_samples": { "type": "integer", "minimum": 0 },
+            "domain_distribution": {
+              "type": "object",
+              "additionalProperties": { "type": "number", "minimum": 0, "maximum": 1 }
+            },
+            "contains_synthetic_data": { "enum": ["yes", "no", "unknown"] },
+            "notes": { "type": "string" }
+          },
+          "unevaluatedProperties": false
+        },
+        "evidence": { "$ref": "common.schema.json#/$defs/evidenceList" }
+      },
+      "unevaluatedProperties": false
+    },
+    "reproducibility": {
+      "type": "object",
+      "x-verification": { "verifier": "online", "assurance": "resolvability" },
+      "required": ["level"],
+      "properties": {
+        "level": { "enum": ["full", "partial", "none", "unknown"] },
+        "code_repo": { "type": "string", "format": "uri" },
+        "code_commit": { "$ref": "common.schema.json#/$defs/commit" },
+        "config_digest": { "$ref": "common.schema.json#/$defs/digest" },
+        "hardware_summary": { "type": "string" },
+        "seeds": { "type": "array", "items": { "type": "integer" } }
+      },
+      "if": { "required": ["level"], "properties": { "level": { "const": "full" } } },
+      "then": { "required": ["code_repo", "code_commit", "config_digest"] },
+      "unevaluatedProperties": false
     }
   },
   "allOf": [
     {
       "if": {
-        "properties": {
-          "access_control": {
-            "properties": { "open_weights": { "const": true } },
-            "required": ["open_weights"]
-          }
-        },
-        "required": ["access_control"]
+        "required": ["openness"],
+        "properties": { "openness": { "required": ["weights"], "properties": { "weights": { "enum": ["public", "gated"] } } } }
       },
-      "then": {
-        "required": ["checkpoints"]
-      }
+      "then": { "required": ["checkpoints"] }
     },
     {
       "if": {
-        "properties": { "modulus": { "const": "transformer" } }
+        "required": ["manifest_assertion"],
+        "properties": { "manifest_assertion": { "required": ["assertion_type"], "properties": { "assertion_type": { "const": "third_party_description" } } } }
+      },
+      "then": { "properties": { "openness": { "properties": { "self_declared_alignment": false } } } }
+    },
+    {
+      "if": {
+        "required": ["manifest_assertion"],
+        "properties": { "manifest_assertion": { "required": ["attestation"] } }
+      },
+      "then": { "properties": { "manifest_status": { "not": { "const": "draft" } } } }
+    },
+    {
+      "if": {
+        "required": ["reproducibility"],
+        "properties": { "reproducibility": { "required": ["level"], "properties": { "level": { "const": "full" } } } }
       },
       "then": {
-        "required": ["model_name", "transformer_spec"],
         "properties": {
-          "transformer_spec": {
-            "type": "object",
-            "required": ["vocabulary_size", "context_length"]
+          "openness": {
+            "properties": {
+              "training_code": { "const": "public" },
+              "training_data": { "enum": ["public", "gated"] }
+            }
           }
         }
       }
     },
     {
       "if": {
-        "properties": { "modulus": { "const": "transformation_model" } }
+        "required": ["manifest_status"],
+        "properties": { "manifest_status": { "not": { "const": "draft" } } }
+      },
+      "then": { "$ref": "#/$defs/nonDraftStrict" }
+    },
+    {
+      "if": {
+        "required": ["manifest_status", "manifest_assertion", "checkpoints"],
+        "properties": {
+          "manifest_status": { "not": { "const": "draft" } },
+          "manifest_assertion": { "required": ["assertion_type"], "properties": { "assertion_type": { "const": "first_party" } } }
+        }
       },
       "then": {
-        "required": ["transformation_name", "transformation_spec"],
         "properties": {
-          "transformation_spec": {
+          "checkpoints": {
+            "items": {
+              "properties": {
+                "files": {
+                  "items": {
+                    "required": ["digest", "byte_size"],
+                    "properties": { "digest": { "$ref": "common.schema.json#/$defs/strictDigest" } }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["lineage"],
+        "properties": {
+          "lineage": {
+            "required": ["derivations"],
+            "properties": { "derivations": { "contains": { "required": ["produces_endpoint"] } } }
+          }
+        }
+      },
+      "then": { "required": ["endpoint"] }
+    }
+  ],
+  "unevaluatedProperties": false,
+  "$defs": {
+    "stackRole": {
+      "enum": [
+        "generator", "decision_policy", "router", "planner", "verifier",
+        "critic_reward", "world_model", "perception_encoder", "memory_indexer",
+        "orchestrator", "embedder", "reranker", "classifier", "guardrail",
+        "transcoder", "hybrid"
+      ]
+    },
+    "activityTargetRef": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["local_checkpoint_id"],
+          "properties": { "local_checkpoint_id": { "type": "string", "minLength": 1 } },
+          "unevaluatedProperties": false
+        },
+        { "$ref": "common.schema.json#/$defs/externalTargetRef" }
+      ]
+    },
+    "derivationActivity": {
+      "type": "object",
+      "required": ["id", "activity_type", "inputs"],
+      "patternProperties": { "^x-": {} },
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "activity_type": {
+          "enum": ["fine_tune", "distill", "merge", "quantize", "adapter", "continued_pretrain", "prune", "rl_post_train", "other"]
+        },
+        "performed_by": { "type": "string", "minLength": 1 },
+        "recipe_digest": { "$ref": "common.schema.json#/$defs/digest" },
+        "inputs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
             "type": "object",
-            "required": ["input_manifold", "output_manifold", "transformation_kernel"]
+            "required": ["role"],
+            "properties": {
+              "role": {
+                "enum": ["base_weights", "teacher", "merge_parent", "quantize_source", "training_data", "calibration_data", "reward_model", "other"]
+              },
+              "target_ref": { "$ref": "#/$defs/activityTargetRef" },
+              "generated_by": { "$ref": "common.schema.json#/$defs/externalTargetRef" },
+              "catalog_record_ids": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+              "undisclosed_summary": { "type": "string", "minLength": 1 },
+              "loss_targets": { "type": "array", "items": { "type": "string" } },
+              "contribution": {
+                "type": "object",
+                "required": ["value", "basis"],
+                "properties": {
+                  "value": { "type": "number", "minimum": 0 },
+                  "basis": { "enum": ["loss_weight", "sample_share", "token_share", "merge_weight"] }
+                },
+                "unevaluatedProperties": false
+              }
+            },
+            "allOf": [
+              {
+                "if": { "required": ["role"], "properties": { "role": { "enum": ["base_weights", "teacher", "merge_parent", "quantize_source", "reward_model"] } } },
+                "then": { "required": ["target_ref"], "properties": { "generated_by": false, "catalog_record_ids": false, "undisclosed_summary": false } }
+              },
+              {
+                "if": { "required": ["role"], "properties": { "role": { "enum": ["training_data", "calibration_data"] } } },
+                "then": {
+                  "anyOf": [
+                    { "required": ["target_ref"] },
+                    { "required": ["catalog_record_ids"] },
+                    { "required": ["undisclosed_summary"] }
+                  ],
+                  "properties": { "loss_targets": false }
+                }
+              },
+              {
+                "if": { "required": ["role"], "properties": { "role": { "const": "other" } } },
+                "then": {
+                  "anyOf": [
+                    { "required": ["target_ref"] },
+                    { "required": ["catalog_record_ids"] },
+                    { "required": ["undisclosed_summary"] }
+                  ]
+                }
+              }
+            ],
+            "unevaluatedProperties": false
+          }
+        },
+        "produces": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "produces_endpoint": { "const": true },
+        "distillation_spec": {
+          "type": "object",
+          "required": ["mode"],
+          "properties": {
+            "mode": { "enum": ["sequence_sft", "logit_kl", "hidden_state_alignment", "cross_paradigm", "hybrid"] },
+            "feature_alignment": {
+              "type": "object",
+              "properties": { "adapter_type": { "type": "string" }, "layer_mapping": { "type": "string" } },
+              "unevaluatedProperties": false
+            }
+          },
+          "unevaluatedProperties": false
+        },
+        "quantization_spec": {
+          "type": "object",
+          "required": ["method"],
+          "properties": {
+            "method": { "type": "string", "minLength": 1 },
+            "nominal_bits": { "type": "integer", "minimum": 1, "maximum": 32 },
+            "effective_bits_per_weight": { "type": "number", "minimum": 0.5, "maximum": 32 },
+            "tool": { "type": "string" },
+            "tool_version": { "type": "string" }
+          },
+          "unevaluatedProperties": false
+        },
+        "merge_spec": {
+          "type": "object",
+          "required": ["method"],
+          "properties": {
+            "method": { "enum": ["linear", "slerp", "ties", "dare_ties", "dare_linear", "task_arithmetic", "frankenmerge", "other"] },
+            "parameters": { "type": "object" }
+          },
+          "unevaluatedProperties": false
+        },
+        "adapter_spec": {
+          "type": "object",
+          "required": ["method"],
+          "properties": {
+            "method": { "enum": ["lora", "qlora", "dora", "ia3", "prefix_tuning", "other"] },
+            "rank": { "type": "integer", "minimum": 1 },
+            "alpha": { "type": "number" },
+            "merged_into_weights": { "type": "boolean" }
+          },
+          "unevaluatedProperties": false
+        },
+        "notes": { "type": "string" }
+      },
+      "allOf": [
+        {
+          "oneOf": [
+            { "required": ["produces"], "not": { "required": ["produces_endpoint"] } },
+            { "required": ["produces_endpoint"], "not": { "required": ["produces"] } }
+          ]
+        },
+        {
+          "if": { "required": ["activity_type"], "properties": { "activity_type": { "const": "distill" } } },
+          "then": {
+            "required": ["distillation_spec"],
+            "properties": { "quantization_spec": false, "merge_spec": false, "adapter_spec": false },
+            "allOf": [
+              {
+                "if": { "required": ["distillation_spec"], "properties": { "distillation_spec": { "required": ["mode"], "properties": { "mode": { "const": "sequence_sft" } } } } },
+                "then": {
+                  "properties": {
+                    "inputs": {
+                      "items": { "properties": { "role": { "enum": ["base_weights", "training_data", "other"] } } },
+                      "contains": {
+                        "required": ["role"],
+                        "properties": { "role": { "const": "training_data" } },
+                        "anyOf": [{ "required": ["generated_by"] }, { "required": ["catalog_record_ids"] }]
+                      },
+                      "minContains": 1
+                    }
+                  }
+                }
+              },
+              {
+                "if": { "required": ["distillation_spec"], "properties": { "distillation_spec": { "required": ["mode"], "properties": { "mode": { "enum": ["logit_kl", "hidden_state_alignment", "cross_paradigm", "hybrid"] } } } } },
+                "then": {
+                  "properties": {
+                    "inputs": {
+                      "items": { "properties": { "role": { "enum": ["base_weights", "teacher", "training_data", "other"] } } },
+                      "contains": { "required": ["role"], "properties": { "role": { "const": "teacher" } } },
+                      "minContains": 1
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "if": { "required": ["activity_type"], "properties": { "activity_type": { "const": "quantize" } } },
+          "then": {
+            "required": ["quantization_spec"],
+            "properties": {
+              "distillation_spec": false, "merge_spec": false, "adapter_spec": false,
+              "inputs": {
+                "items": { "properties": { "role": { "enum": ["quantize_source", "calibration_data"] } } },
+                "contains": { "required": ["role"], "properties": { "role": { "const": "quantize_source" } } },
+                "minContains": 1, "maxContains": 1
+              }
+            }
+          }
+        },
+        {
+          "if": { "required": ["activity_type"], "properties": { "activity_type": { "const": "merge" } } },
+          "then": {
+            "required": ["merge_spec"],
+            "properties": {
+              "distillation_spec": false, "quantization_spec": false, "adapter_spec": false,
+              "inputs": {
+                "items": { "properties": { "role": { "enum": ["merge_parent", "base_weights"] } } },
+                "contains": { "required": ["role"], "properties": { "role": { "const": "merge_parent" } } },
+                "minContains": 2
+              }
+            }
+          }
+        },
+        {
+          "if": { "required": ["activity_type"], "properties": { "activity_type": { "const": "adapter" } } },
+          "then": {
+            "required": ["adapter_spec"],
+            "properties": {
+              "distillation_spec": false, "quantization_spec": false, "merge_spec": false,
+              "inputs": {
+                "items": { "properties": { "role": { "enum": ["base_weights", "teacher", "training_data", "other"] } } },
+                "contains": { "required": ["role"], "properties": { "role": { "const": "base_weights" } } },
+                "minContains": 1, "maxContains": 1
+              }
+            }
+          }
+        },
+        {
+          "if": { "required": ["activity_type"], "properties": { "activity_type": { "enum": ["fine_tune", "continued_pretrain"] } } },
+          "then": {
+            "properties": {
+              "distillation_spec": false, "quantization_spec": false, "merge_spec": false, "adapter_spec": false,
+              "inputs": {
+                "items": { "properties": { "role": { "enum": ["base_weights", "training_data", "other"] } } },
+                "contains": { "required": ["role"], "properties": { "role": { "const": "base_weights" } } },
+                "minContains": 1, "maxContains": 1
+              }
+            }
+          }
+        },
+        {
+          "if": { "required": ["activity_type"], "properties": { "activity_type": { "const": "rl_post_train" } } },
+          "then": {
+            "properties": {
+              "distillation_spec": false, "quantization_spec": false, "merge_spec": false, "adapter_spec": false,
+              "inputs": {
+                "items": { "properties": { "role": { "enum": ["base_weights", "reward_model", "training_data", "other"] } } },
+                "contains": { "required": ["role"], "properties": { "role": { "const": "base_weights" } } },
+                "minContains": 1, "maxContains": 1
+              }
+            }
+          }
+        },
+        {
+          "if": { "required": ["activity_type"], "properties": { "activity_type": { "const": "prune" } } },
+          "then": {
+            "properties": {
+              "distillation_spec": false, "quantization_spec": false, "merge_spec": false, "adapter_spec": false,
+              "inputs": {
+                "items": { "properties": { "role": { "enum": ["base_weights", "calibration_data", "other"] } } },
+                "contains": { "required": ["role"], "properties": { "role": { "const": "base_weights" } } },
+                "minContains": 1, "maxContains": 1
+              }
+            }
+          }
+        },
+        {
+          "if": { "required": ["activity_type"], "properties": { "activity_type": { "const": "other" } } },
+          "then": {
+            "properties": { "distillation_spec": false, "quantization_spec": false, "merge_spec": false, "adapter_spec": false }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "nonDraftStrict": {
+      "properties": {
+        "runtime": {
+          "properties": {
+            "chat_template_digest": { "$ref": "common.schema.json#/$defs/strictDigest" },
+            "tokenizer_config_digest": { "$ref": "common.schema.json#/$defs/strictDigest" }
+          }
+        },
+        "lineage": {
+          "properties": {
+            "derivations": {
+              "items": {
+                "properties": {
+                  "recipe_digest": { "$ref": "common.schema.json#/$defs/strictDigest" },
+                  "inputs": {
+                    "items": {
+                      "properties": {
+                        "target_ref": {
+                          "properties": {
+                            "manifest_digest": { "$ref": "common.schema.json#/$defs/strictDigest" },
+                            "content_digests": { "items": { "$ref": "common.schema.json#/$defs/strictDigest" } },
+                            "revision": { "$ref": "common.schema.json#/$defs/strictRevision" }
+                          }
+                        },
+                        "generated_by": {
+                          "properties": {
+                            "manifest_digest": { "$ref": "common.schema.json#/$defs/strictDigest" },
+                            "content_digests": { "items": { "$ref": "common.schema.json#/$defs/strictDigest" } },
+                            "revision": { "$ref": "common.schema.json#/$defs/strictRevision" }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "checkpoints": {
+          "items": {
+            "properties": {
+              "files": { "items": { "properties": { "digest": { "$ref": "common.schema.json#/$defs/strictDigest" } } } }
+            }
+          }
+        },
+        "data_provenance": {
+          "properties": {
+            "ingestion_catalog": {
+              "properties": {
+                "digest": { "$ref": "common.schema.json#/$defs/strictDigest" },
+                "tokenizer_ref": { "properties": { "digest": { "$ref": "common.schema.json#/$defs/strictDigest" } } }
+              }
+            }
+          }
+        },
+        "reproducibility": {
+          "properties": {
+            "code_commit": { "$ref": "common.schema.json#/$defs/strictCommit" },
+            "config_digest": { "$ref": "common.schema.json#/$defs/strictDigest" }
           }
         }
       }
     }
-  ]
+  }
 }

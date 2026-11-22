@@ -1,0 +1,67 @@
+$schema: https://moid.info/schemas/v0.3.0-rc4/moid.schema.json
+spec_version: 0.3.0-rc4
+manifest_status: release
+moid: acme-corp/nexus-frontier
+name: Nexus Frontier API
+model_version: "2026.11"
+released_at: 2026-13-45
+publisher:
+  namespace: acme-corp
+  display_name: Acme AI Corp
+  url: https://acme.example.com
+  binding_uri: https://acme.example.com/.well-known/moid-publisher.json
+manifest_assertion:
+  asserted_by:
+    name: Acme AI Corp
+    identity:
+      kind: oidc
+      oidc_issuer: https://token.actions.githubusercontent.com
+      subject: https://github.com/acme-corp/nexus-frontier/.github/workflows/release.yml@refs/tags/2026.11
+  assertion_type: first_party
+  asserted_at: 2026-11-22T12:00:00Z
+  attestation:
+    format: sigstore-bundle-v0.3
+    path: ./nexus-frontier.sigstore.json
+    predicate_type: https://moid.info/attestations/manifest/v0.3
+    canonicalization: rfc8785-jcs
+modulus:
+  disclosure_status: undisclosed
+stack_roles:
+  primary_role: orchestrator
+  secondary_roles:
+    - generator
+    - planner
+modalities:
+  input:
+    - text
+    - image
+    - code
+  output:
+    - text
+    - code
+domain_focus:
+  disclosure_status: partial
+  basis: declared_intent
+  primary: multimodal
+parameters:
+  disclosure_status: undisclosed
+lineage:
+  disclosure_status: undisclosed
+endpoint:
+  provider: Acme Cloud
+  model_identifier: nexus-frontier-2026-11
+  api_uri: https://api.acme.example.com/v1/chat/completions
+licensing:
+  disclosure_status: disclosed
+  custom_license_url: https://acme.example.com/terms
+  restrictions:
+    - no_distillation
+    - acceptable_use_policy
+openness:
+  weights: private
+  training_code: private
+  inference_code: private
+  data_information: private
+  training_data: private
+data_provenance:
+  disclosure_status: undisclosed

@@ -1,0 +1,2 @@
+{"record_id":"c1","record_level":"corpus","source_category":"public_dataset","modalities":["text"],"license_status":"unknown"}
+{"record_id":"s1","record_level":"shard","source_category":"public_dataset","digest":"sha256:4444444444444444444444444444444444444444444444444444444444444444","digest_scope":"raw_bytes","modalities":["text"],"license_status":"unknown"}

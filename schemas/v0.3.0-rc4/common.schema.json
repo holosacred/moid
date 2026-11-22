@@ -1,0 +1,153 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moid.info/schemas/v0.3.0-rc4/common.schema.json",
+  "title": "MoID Shared Vocabulary v0.3.0-rc4",
+  "$defs": {
+    "moidSlug": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,62}/[a-z0-9][a-z0-9._-]{0,127}$"
+    },
+    "disclosureStatus": {
+      "enum": ["disclosed", "partial", "undisclosed", "unknown"]
+    },
+    "availabilityState": {
+      "enum": ["public", "partial", "gated", "private", "unknown"]
+    },
+    "modality": {
+      "enum": ["text", "code", "image", "audio", "video", "tabular", "3d", "sensor"]
+    },
+    "strictDigest": {
+      "type": "string",
+      "oneOf": [
+        { "pattern": "^sha256:[0-9a-f]{64}$" },
+        { "pattern": "^sha512:[0-9a-f]{128}$" },
+        { "pattern": "^blake3:[0-9a-f]{64}$" }
+      ]
+    },
+    "digest": {
+      "type": "string",
+      "oneOf": [
+        { "$ref": "#/$defs/strictDigest" },
+        { "pattern": "^placeholder:[a-z0-9._-]+$" }
+      ]
+    },
+    "strictRevision": {
+      "type": "string",
+      "pattern": "^(git-sha1:[0-9a-f]{40}|git-sha256:[0-9a-f]{64}|hf-rev:[0-9a-f]{40}|oci-digest:sha256:[0-9a-f]{64})$"
+    },
+    "revision": {
+      "type": "string",
+      "oneOf": [
+        { "$ref": "#/$defs/strictRevision" },
+        { "pattern": "^placeholder:[a-z0-9._-]+$" }
+      ]
+    },
+    "strictCommit": {
+      "type": "string",
+      "pattern": "^(git-sha1:[0-9a-f]{40}|git-sha256:[0-9a-f]{64})$"
+    },
+    "commit": {
+      "type": "string",
+      "oneOf": [
+        { "$ref": "#/$defs/strictCommit" },
+        { "pattern": "^placeholder:[a-z0-9._-]+$" }
+      ]
+    },
+    "identity": {
+      "description": "Cryptographic signer identity (PGP/GPG, SSH, Sigstore OIDC, Minisign, or raw key fingerprint).",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["kind", "oidc_issuer", "subject"],
+          "properties": {
+            "kind": { "const": "oidc" },
+            "oidc_issuer": { "type": "string", "format": "uri" },
+            "subject": { "type": "string", "minLength": 1 }
+          },
+          "unevaluatedProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["kind", "fingerprint"],
+          "properties": {
+            "kind": { "const": "pgp" },
+            "fingerprint": { "type": "string", "pattern": "^([0-9a-fA-F]{40}|[0-9a-fA-F]{64})$" },
+            "keyserver_uri": { "type": "string", "format": "uri" }
+          },
+          "unevaluatedProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["kind", "key_type", "fingerprint"],
+          "properties": {
+            "kind": { "const": "ssh" },
+            "key_type": { "enum": ["ssh-ed25519", "ecdsa-sha2-nistp256", "ecdsa-sha2-nistp384", "ssh-rsa"] },
+            "fingerprint": { "type": "string", "pattern": "^SHA256:[A-Za-z0-9+/=]{43,44}$" }
+          },
+          "unevaluatedProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["kind", "public_key"],
+          "properties": {
+            "kind": { "const": "minisign" },
+            "public_key": { "type": "string", "pattern": "^RW[A-Za-z0-9+/=]{50,64}$" }
+          },
+          "unevaluatedProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["kind", "key_fingerprint"],
+          "properties": {
+            "kind": { "const": "key" },
+            "key_fingerprint": { "$ref": "#/$defs/strictDigest" }
+          },
+          "unevaluatedProperties": false
+        }
+      ]
+    },
+    "evidenceList": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["url", "kind"],
+        "properties": {
+          "url": { "type": "string", "format": "uri" },
+          "kind": {
+            "enum": ["model_card", "paper", "code_repo", "license_file", "config_json", "benchmark_report", "eu_gpai_summary", "other"]
+          },
+          "retrieved_at": { "type": "string", "format": "date" }
+        },
+        "unevaluatedProperties": false
+      }
+    },
+    "tokenizerRef": {
+      "type": "object",
+      "required": ["digest"],
+      "properties": {
+        "moid": { "$ref": "#/$defs/moidSlug" },
+        "source_id": { "type": "string", "minLength": 1 },
+        "digest": { "$ref": "#/$defs/digest" }
+      },
+      "unevaluatedProperties": false
+    },
+    "externalTargetRef": {
+      "type": "object",
+      "anyOf": [
+        { "required": ["manifest_digest"] },
+        { "required": ["content_digests"] },
+        { "required": ["locator", "revision"] }
+      ],
+      "properties": {
+        "moid": { "$ref": "#/$defs/moidSlug" },
+        "model_version": { "type": "string", "minLength": 1 },
+        "source_id": { "type": "string", "minLength": 1 },
+        "manifest_digest": { "$ref": "#/$defs/digest" },
+        "content_digests": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/digest" } },
+        "locator": { "type": "string", "format": "uri" },
+        "revision": { "$ref": "#/$defs/revision" }
+      },
+      "unevaluatedProperties": false
+    }
+  }
+}

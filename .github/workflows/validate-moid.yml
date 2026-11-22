@@ -1,4 +1,4 @@
-name: Validate MoID Manifest & CLI
+name: Validate MoID Conformance (Rust + Ajv)
 
 on:
   push:
@@ -6,21 +6,20 @@ on:
   pull_request:
 
 jobs:
-  validate:
+  conformance:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Run Rust integration tests
+      - name: Run Rust conformance tests (jsonschema 0.61)
         working-directory: cli
         run: cargo test
 
-      - name: Validate template and example manifests
+      - name: Run dual-validator parity suite (Ajv 2020-12 + Rust)
         run: |
-          cargo run --release --manifest-path cli/Cargo.toml -- validate template.moid.yaml
-          for f in examples/*.moid.yaml; do
-            cargo run --release --manifest-path cli/Cargo.toml -- validate "$f"
-          done
+          (cd conformance && npm install --silent)
+          node conformance/run-ajv.mjs

@@ -1,24 +1,36 @@
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
-use jsonschema::JSONSchema;
+use jsonschema::{Registry, Resource, Validator};
 use rayon::prelude::*;
-use serde::Serialize;
-use serde_json::Value;
+use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
+use std::collections::{HashMap, HashSet};
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 
-const ROOT_SCHEMA_RAW: &str = include_str!("../../schema.json");
-const INGESTION_SCHEMA_RAW: &str = include_str!("../../ingestion.schema.json");
+const COMMON_SCHEMA_RAW: &str = include_str!("../../schemas/v0.3.0-rc4/common.schema.json");
+const MOID_SCHEMA_RAW: &str = include_str!("../../schemas/v0.3.0-rc4/moid.schema.json");
+const INGESTION_SCHEMA_RAW: &str = include_str!("../../schemas/v0.3.0-rc4/ingestion.schema.json");
+const PUBLISHER_SCHEMA_RAW: &str = include_str!("../../schemas/v0.3.0-rc4/publisher.schema.json");
 const TEMPLATE_RAW: &str = include_str!("../../template.moid.yaml");
 
+const COMMON_ID: &str = "https://moid.info/schemas/v0.3.0-rc4/common.schema.json";
+const DISCLOSURE_SECTIONS: [&str; 6] = [
+    "modulus", "domain_focus", "parameters", "lineage", "licensing", "data_provenance",
+];
+const EMPTY_HASHES: [&str; 2] = [
+    "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "blake3:af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262",
+];
+const OSI_ALLOWLIST: [&str; 9] = [
+    "Apache-2.0", "MIT", "BSD-2-Clause", "BSD-3-Clause", "GPL-3.0-only",
+    "GPL-3.0-or-later", "LGPL-3.0-only", "MPL-2.0", "ISC",
+];
+const DOC_ALLOWLIST: [&str; 3] = ["CC-BY-4.0", "CC-BY-SA-4.0", "CC0-1.0"];
+
 #[derive(Parser)]
-#[command(
-    name = "moid",
-    version,
-    about = "Modulus IDentifier (MoID) manifest generator, inspector, and cryptographic validator"
-)]
+#[command(name = "moid", version, about = "MoID (moid.info) manifest validator, hasher, and inspector")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -26,596 +38,474 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Initialize a starter moid.yaml manifest
     Init {
-        /// Output file path
         #[arg(short, long, default_value = "moid.yaml")]
         output: PathBuf,
-
-        /// Modulus paradigm (transformer, transformation_model, state_space, graph_network, neural_operator, hybrid)
-        #[arg(short, long, default_value = "transformer")]
-        modulus: String,
-
-        /// Stack role (generator, decision_policy, router, planner, verifier, critic_reward, world_model, perception_encoder, memory_indexer, orchestrator, hybrid)
-        #[arg(short = 'r', long, default_value = "generator")]
-        stack_role: String,
-
-        /// Canonical identifier (e.g., org/model-name)
-        #[arg(long, default_value = "organization/model-id")]
+        #[arg(long, default_value = "organization/model-slug")]
         id: String,
     },
-
-    /// Compute parallel streaming SHA-256 digests (or parse SHA256SUMS) for checkpoints
     Hash {
-        /// One or more model weight/checkpoint files
-        #[arg(required_unless_present = "from_sha256sums")]
         files: Vec<PathBuf>,
-
-        /// Parse an existing SHA256SUMS file instead of hashing local files
-        #[arg(long)]
-        from_sha256sums: Option<PathBuf>,
-
-        /// Precision label to populate (e.g., bf16, fp16, fp32, int4)
         #[arg(short, long, default_value = "bf16")]
         precision: String,
-
-        /// Quantization label to populate (e.g., none, awq_int4, gguf_q4_k_m)
-        #[arg(short, long, default_value = "none")]
-        quantization: String,
-
-        /// Write/update the checkpoints block directly inside an existing moid.yaml
-        #[arg(short, long)]
-        write: Option<PathBuf>,
+        #[arg(long, default_value = "full_weights")]
+        kind: String,
     },
-
-    /// Validate an ingestion_manifest.jsonl file and compute its seal hash
     Seal {
-        /// Path to ingestion_manifest.jsonl
         #[arg(default_value = "ingestion_manifest.jsonl")]
         catalog: PathBuf,
-
-        /// Write/update data_provenance directly inside an existing moid.yaml
-        #[arg(short, long)]
-        write: Option<PathBuf>,
-    },
-
-    /// Validate moid.yaml against schema.json and verify linked provenance hashes
-    Validate {
-        /// Path to moid.yaml
-        #[arg(default_value = "moid.yaml")]
-        manifest: PathBuf,
-
-        /// Also recompute and verify SHA-256 hashes of local checkpoint files in parallel
         #[arg(long)]
-        verify_weights: bool,
+        non_draft: bool,
     },
-
-    /// Print a human-readable summary card for a moid.yaml manifest
-    Inspect {
-        /// Path to moid.yaml
+    Validate {
         #[arg(default_value = "moid.yaml")]
         manifest: PathBuf,
+        #[arg(long)]
+        verify_files: bool,
+        #[arg(long)]
+        verify_catalog: bool,
+        #[arg(long)]
+        strict: bool,
+        #[arg(long)]
+        schema_only: bool,
     },
-
-    /// Compare two moid.yaml manifests and highlight changes
+    ValidatePublisher {
+        #[arg(default_value = "moid-publisher.json")]
+        binding: PathBuf,
+    },
+    Inspect {
+        #[arg(default_value = "moid.yaml")]
+        manifest: PathBuf,
+        #[arg(long)]
+        verify_files: bool,
+    },
     Diff {
-        /// Path to older moid.yaml
         old_manifest: PathBuf,
-
-        /// Path to newer moid.yaml
         new_manifest: PathBuf,
     },
 }
 
-#[derive(Serialize)]
-struct CheckpointEntry {
-    path: String,
-    format: String,
-    precision: String,
-    quantization: String,
-    sha256: String,
-}
-
 fn main() -> Result<()> {
-    let cli = Cli::parse();
-
-    match cli.command {
-        Commands::Init {
-            output,
-            modulus,
-            stack_role,
-            id,
-        } => cmd_init(&output, &modulus, &stack_role, &id),
-        Commands::Hash {
-            files,
-            from_sha256sums,
-            precision,
-            quantization,
-            write,
-        } => cmd_hash(
-            &files,
-            from_sha256sums.as_deref(),
-            &precision,
-            &quantization,
-            write.as_deref(),
-        ),
-        Commands::Seal { catalog, write } => cmd_seal(&catalog, write.as_deref()),
-        Commands::Validate {
-            manifest,
-            verify_weights,
-        } => cmd_validate(&manifest, verify_weights),
-        Commands::Inspect { manifest } => cmd_inspect(&manifest),
-        Commands::Diff {
-            old_manifest,
-            new_manifest,
-        } => cmd_diff(&old_manifest, &new_manifest),
+    match Cli::parse().command {
+        Commands::Init { output, id } => cmd_init(&output, &id),
+        Commands::Hash { files, precision, kind } => cmd_hash(&files, &precision, &kind),
+        Commands::Seal { catalog, non_draft } => cmd_seal(&catalog, non_draft),
+        Commands::Validate { manifest, verify_files, verify_catalog, strict, schema_only } => {
+            cmd_validate(&manifest, verify_files, verify_catalog, strict, schema_only)
+        }
+        Commands::ValidatePublisher { binding } => cmd_validate_publisher(&binding),
+        Commands::Inspect { manifest, verify_files } => cmd_inspect(&manifest, verify_files),
+        Commands::Diff { old_manifest, new_manifest } => cmd_diff(&old_manifest, &new_manifest),
     }
 }
 
-fn sha256_stream(path: &Path) -> Result<String> {
-    let file = File::open(path)
-        .with_context(|| format!("Failed to open file for hashing: {}", path.display()))?;
+fn build_validator(root_raw: &str) -> Result<Validator> {
+    let common_val: Value = serde_json::from_str(COMMON_SCHEMA_RAW)?;
+    let root_val: Value = serde_json::from_str(root_raw)?;
+    let registry = Registry::new()
+        .add(COMMON_ID, Resource::from_contents(common_val))
+        .map_err(|e| anyhow::anyhow!("Registry add error: {}", e))?
+        .prepare()
+        .map_err(|e| anyhow::anyhow!("Registry prepare error: {}", e))?;
+    jsonschema::draft202012::options()
+        .with_registry(&registry)
+        .offline()
+        .should_validate_formats(true)
+        .build(&root_val)
+        .map_err(|e| anyhow::anyhow!("Schema build error: {}", e))
+}
+
+fn parse_yaml_12(path: &Path) -> Result<Value> {
+    let raw = fs::read_to_string(path).with_context(|| format!("Failed to read {}", path.display()))?;
+    let yv: serde_yaml::Value = serde_yaml::from_str(&raw)
+        .with_context(|| format!("Failed to parse YAML in {}", path.display()))?;
+    check_yaml_safety(&yv)?;
+    Ok(serde_json::to_value(yv)?)
+}
+
+fn check_yaml_safety(v: &serde_yaml::Value) -> Result<()> {
+    match v {
+        serde_yaml::Value::Number(n) => {
+            if let Some(f) = n.as_f64() {
+                if !f.is_finite() {
+                    bail!("SCHEMA-01: Non-finite float (NaN/Inf) not allowed");
+                }
+            }
+        }
+        serde_yaml::Value::Sequence(seq) => {
+            for item in seq { check_yaml_safety(item)?; }
+        }
+        serde_yaml::Value::Mapping(map) => {
+            for (_, val) in map { check_yaml_safety(val)?; }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn canonical_json_bytes(v: &Value) -> Vec<u8> {
+    fn sort_val(v: &Value) -> Value {
+        match v {
+            Value::Object(map) => {
+                let mut keys: Vec<&String> = map.keys().collect();
+                keys.sort();
+                let mut sorted = Map::new();
+                for k in keys { sorted.insert(k.clone(), sort_val(&map[k])); }
+                Value::Object(sorted)
+            }
+            Value::Array(arr) => Value::Array(arr.iter().map(sort_val).collect()),
+            _ => v.clone(),
+        }
+    }
+    serde_json::to_vec(&sort_val(v)).unwrap_or_default()
+}
+
+fn sha256_bytes(bytes: &[u8]) -> String {
+    let mut h = Sha256::new();
+    h.update(bytes);
+    format!("sha256:{}", hex::encode(h.finalize()))
+}
+
+fn sha256_stream(path: &Path) -> Result<(String, u64)> {
+    let file = File::open(path).with_context(|| format!("Failed to open {}", path.display()))?;
     let mut reader = BufReader::with_capacity(1024 * 1024, file);
     let mut hasher = Sha256::new();
-    let mut buffer = vec![0u8; 1024 * 1024];
-
+    let mut buf = vec![0u8; 1024 * 1024];
+    let mut total = 0u64;
     loop {
-        let bytes_read = reader.read(&mut buffer)?;
-        if bytes_read == 0 {
-            break;
-        }
-        hasher.update(&buffer[..bytes_read]);
+        let n = reader.read(&mut buf)?;
+        if n == 0 { break; }
+        hasher.update(&buf[..n]);
+        total += n as u64;
     }
-
-    Ok(hex::encode(hasher.finalize()))
+    Ok((format!("sha256:{}", hex::encode(hasher.finalize())), total))
 }
 
-fn cmd_init(output: &Path, modulus: &str, stack_role: &str, id: &str) -> Result<()> {
-    if output.exists() {
-        bail!("Refusing to overwrite existing file: {}", output.display());
-    }
-
+fn cmd_init(output: &Path, id: &str) -> Result<()> {
+    if output.exists() { bail!("Refusing to overwrite {}", output.display()); }
+    let ns = id.split('/').next().unwrap_or("organization");
     let content = TEMPLATE_RAW
-        .replace(
-            "modulus: \"transformer\"",
-            &format!("modulus: \"{}\"", modulus),
-        )
-        .replace(
-            "stack_role: \"generator\"",
-            &format!("stack_role: \"{}\"", stack_role),
-        )
-        .replace(
-            "moid: \"holosacred/aether-moe-7b-v1\"",
-            &format!("moid: \"{}\"", id),
-        )
-        .replace(
-            "moid: \"organization/model-id\"",
-            &format!("moid: \"{}\"", id),
-        );
-
-    fs::write(output, content)
-        .with_context(|| format!("Failed to write {}", output.display()))?;
-
+        .replace("holosacred/arbiter-nano-hybrid", id)
+        .replace("namespace: \"holosacred\"", &format!("namespace: \"{}\"", ns));
+    fs::write(output, content)?;
     println!("Initialized {}", output.display());
     Ok(())
 }
 
-fn parse_sha256sums(
-    sums_path: &Path,
-    precision: &str,
-    quantization: &str,
-) -> Result<Vec<CheckpointEntry>> {
-    let raw = fs::read_to_string(sums_path)
-        .with_context(|| format!("Failed to read {}", sums_path.display()))?;
-    let mut entries = Vec::new();
+fn cmd_hash(files: &[PathBuf], precision: &str, kind: &str) -> Result<()> {
+    if files.is_empty() { bail!("Provide at least one checkpoint file."); }
+    let results: Vec<(String, String, String, u64)> = files
+        .par_iter()
+        .map(|p| -> Result<_> {
+            let (digest, size) = sha256_stream(p)?;
+            let ext = p.extension().and_then(|s| s.to_str()).unwrap_or("other").to_string();
+            Ok((p.to_string_lossy().replace('\\', "/"), ext, digest, size))
+        })
+        .collect::<Result<Vec<_>>>()?;
 
-    for (idx, line) in raw.lines().enumerate() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with('#') {
-            continue;
-        }
-        let (hash_part, file_part) = trimmed.split_once(char::is_whitespace).with_context(|| {
-            format!("Malformed SHA256SUMS entry on line {}", idx + 1)
-        })?;
-        let digest = hash_part.trim().to_lowercase();
-        if digest.len() != 64 || !digest.chars().all(|c| c.is_ascii_hexdigit()) {
-            bail!("Invalid SHA-256 digest on line {}", idx + 1);
-        }
-        let cleaned_path = file_part
-            .trim()
-            .trim_start_matches('*')
-            .trim_start_matches("./")
-            .replace('\\', "/");
-        let ext = Path::new(&cleaned_path)
-            .extension()
-            .and_then(|s| s.to_str())
-            .unwrap_or("bin")
-            .to_string();
-
-        entries.push(CheckpointEntry {
-            path: cleaned_path,
-            format: ext,
-            precision: precision.to_string(),
-            quantization: quantization.to_string(),
-            sha256: digest,
-        });
+    println!("checkpoints:");
+    println!("  - id: \"primary\"");
+    println!("    artifact_kind: \"{}\"", kind);
+    println!("    format: \"{}\"", results[0].1);
+    println!("    precision: \"{}\"", precision);
+    println!("    files:");
+    for (p, _, d, sz) in results {
+        println!("      - path: \"{}\"\n        digest: \"{}\"\n        byte_size: {}", p, d, sz);
     }
-
-    if entries.is_empty() {
-        bail!("No valid entries found in {}", sums_path.display());
-    }
-    Ok(entries)
-}
-
-fn cmd_hash(
-    files: &[PathBuf],
-    from_sha256sums: Option<&Path>,
-    precision: &str,
-    quantization: &str,
-    write_target: Option<&Path>,
-) -> Result<()> {
-    let entries: Vec<CheckpointEntry> = if let Some(sums_path) = from_sha256sums {
-        parse_sha256sums(sums_path, precision, quantization)?
-    } else {
-        files
-            .par_iter()
-            .map(|path| -> Result<CheckpointEntry> {
-                if !path.is_file() {
-                    bail!("Checkpoint file not found: {}", path.display());
-                }
-                let ext = path
-                    .extension()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("bin")
-                    .to_string();
-                let digest = sha256_stream(path)?;
-                let normalized = path.to_string_lossy().replace('\\', "/");
-                Ok(CheckpointEntry {
-                    path: normalized,
-                    format: ext,
-                    precision: precision.to_string(),
-                    quantization: quantization.to_string(),
-                    sha256: digest,
-                })
-            })
-            .collect::<Result<Vec<_>>>()?
-    };
-
-    if let Some(target_path) = write_target {
-        let raw_yaml = fs::read_to_string(target_path)
-            .with_context(|| format!("Failed to read {}", target_path.display()))?;
-        let mut doc: serde_yaml::Value = serde_yaml::from_str(&raw_yaml)
-            .with_context(|| format!("Failed to parse YAML in {}", target_path.display()))?;
-        let map = doc
-            .as_mapping_mut()
-            .context("Root of target manifest must be a YAML mapping")?;
-        let cp_val = serde_yaml::to_value(&entries)?;
-        map.insert(
-            serde_yaml::Value::String("checkpoints".to_string()),
-            cp_val,
-        );
-        fs::write(target_path, serde_yaml::to_string(&doc)?)
-            .with_context(|| format!("Failed to write {}", target_path.display()))?;
-        println!(
-            "Updated checkpoints in {} ({} entries).",
-            target_path.display(),
-            entries.len()
-        );
-    } else {
-        println!("checkpoints:");
-        for entry in &entries {
-            println!("  - path: \"{}\"", entry.path);
-            println!("    format: \"{}\"", entry.format);
-            println!("    precision: \"{}\"", entry.precision);
-            println!("    quantization: \"{}\"", entry.quantization);
-            println!("    sha256: \"{}\"", entry.sha256);
-        }
-    }
-
     Ok(())
 }
 
-fn verify_jsonl_catalog(catalog_path: &Path) -> Result<(String, usize)> {
-    let schema_val: Value = serde_json::from_str(INGESTION_SCHEMA_RAW)
-        .context("Embedded ingestion.schema.json is invalid JSON")?;
-    let compiled = JSONSchema::compile(&schema_val)
-        .map_err(|e| anyhow::anyhow!("Failed to compile ingestion schema: {}", e))?;
+fn validate_catalog_file(catalog_path: &Path, non_draft: bool) -> Result<(String, HashMap<String, Value>, HashSet<String>)> {
+    let validator = build_validator(INGESTION_SCHEMA_RAW)?;
+    let (digest, _) = sha256_stream(catalog_path)?;
+    let file = File::open(catalog_path).with_context(|| format!("Failed to open {}", catalog_path.display()))?;
+    let mut records: HashMap<String, Value> = HashMap::new();
+    let mut parents: HashSet<String> = HashSet::new();
+    let mut top_levels: HashSet<String> = HashSet::new();
 
-    let digest = sha256_stream(catalog_path)?;
-    let file = File::open(catalog_path)
-        .with_context(|| format!("Failed to open catalog: {}", catalog_path.display()))?;
-    let reader = BufReader::with_capacity(1024 * 1024, file);
-
-    let mut record_count = 0usize;
-    for (idx, line_res) in reader.lines().enumerate() {
-        let line_num = idx + 1;
-        let line = line_res?;
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
+    for (idx, line) in BufReader::new(file).lines().enumerate() {
+        let line = line?;
+        let t = line.trim();
+        if t.is_empty() { continue; }
+        let rec: Value = serde_json::from_str(t)
+            .with_context(|| format!("CAT-01: Invalid JSON on line {}", idx + 1))?;
+        let errs: Vec<String> = validator.iter_errors(&rec).map(|e| format!("[{}] {}", e.instance_path(), e)).collect();
+        if !errs.is_empty() {
+            bail!("CAT-01: Schema error on line {}:\n  - {}", idx + 1, errs.join("\n  - "));
         }
-
-        let record: Value = serde_json::from_str(trimmed).with_context(|| {
-            format!(
-                "Invalid JSON on line {} of {}",
-                line_num,
-                catalog_path.display()
-            )
-        })?;
-
-        if let Err(errors) = compiled.validate(&record) {
-            let details: Vec<String> = errors
-                .map(|e| format!("[{}] {}", e.instance_path, e))
-                .collect();
-            bail!(
-                "Schema error on line {} of {}:\n  - {}",
-                line_num,
-                catalog_path.display(),
-                details.join("\n  - ")
-            );
+        let id = rec["record_id"].as_str().unwrap().to_string();
+        if records.contains_key(&id) { bail!("CAT-01: Duplicate record_id '{}'", id); }
+        if let Some(pid) = rec.get("parent_record_id").and_then(|v| v.as_str()) {
+            parents.insert(pid.to_string());
+        } else {
+            top_levels.insert(rec["record_level"].as_str().unwrap().to_string());
         }
-        record_count += 1;
+        if non_draft {
+            if let Some(d) = rec.get("digest").and_then(|v| v.as_str()) {
+                if d.starts_with("placeholder:") { bail!("CAT-01: Placeholder digest in non-draft record '{}'", id); }
+            }
+        }
+        records.insert(id, rec);
     }
 
-    Ok((digest, record_count))
+    if top_levels.len() > 1 {
+        bail!("CAT-01: Unlinked mixed record_levels ({:?}) without parent_record_id", top_levels);
+    }
+    for (id, rec) in &records {
+        if let Some(pid) = rec.get("parent_record_id").and_then(|v| v.as_str()) {
+            if !records.contains_key(pid) { bail!("CAT-01: Record '{}' references missing parent '{}'", id, pid); }
+            let mut cur = pid;
+            let mut seen = HashSet::from([id.as_str()]);
+            while let Some(next_p) = records.get(cur).and_then(|r| r.get("parent_record_id")).and_then(|v| v.as_str()) {
+                if !seen.insert(cur) { bail!("CAT-01: Cycle in parent_record_id at '{}'", cur); }
+                cur = next_p;
+            }
+        }
+        let is_non_leaf = parents.contains(id);
+        if is_non_leaf && rec.get("digest").is_some() {
+            bail!("CAT-01: Non-leaf parent record '{}' MUST NOT carry a digest", id);
+        }
+        if !is_non_leaf && non_draft && rec.get("digest").is_none() {
+            bail!("CAT-01: Leaf record '{}' requires digest in non-draft catalog", id);
+        }
+    }
+    Ok((digest, records, parents))
 }
 
-fn cmd_seal(catalog: &Path, write_target: Option<&Path>) -> Result<()> {
-    if !catalog.is_file() {
-        bail!("Catalog file not found: {}", catalog.display());
-    }
-
-    let (digest, count) = verify_jsonl_catalog(catalog)?;
-    let normalized_cat = catalog.to_string_lossy().replace('\\', "/");
-
-    if let Some(target_path) = write_target {
-        let raw_yaml = fs::read_to_string(target_path)
-            .with_context(|| format!("Failed to read {}", target_path.display()))?;
-        let mut doc: serde_yaml::Value = serde_yaml::from_str(&raw_yaml)
-            .with_context(|| format!("Failed to parse YAML in {}", target_path.display()))?;
-        let root_map = doc
-            .as_mapping_mut()
-            .context("Root of target manifest must be a YAML mapping")?;
-        let prov_key = serde_yaml::Value::String("data_provenance".to_string());
-        if !root_map.contains_key(&prov_key) {
-            root_map.insert(
-                prov_key.clone(),
-                serde_yaml::Value::Mapping(serde_yaml::Mapping::new()),
-            );
-        }
-        let prov_map = root_map
-            .get_mut(&prov_key)
-            .and_then(|v| v.as_mapping_mut())
-            .context("data_provenance must be a YAML mapping")?;
-        prov_map.insert(
-            serde_yaml::Value::String("ingestion_catalog_file".to_string()),
-            serde_yaml::Value::String(normalized_cat),
-        );
-        prov_map.insert(
-            serde_yaml::Value::String("catalog_file_hash_sha256".to_string()),
-            serde_yaml::Value::String(digest),
-        );
-        fs::write(target_path, serde_yaml::to_string(&doc)?)
-            .with_context(|| format!("Failed to write {}", target_path.display()))?;
-        println!(
-            "Updated data_provenance in {} ({} records sealed).",
-            target_path.display(),
-            count
-        );
-    } else {
-        println!("Verified {} records in {}", count, catalog.display());
-        println!("\ndata_provenance:");
-        println!("  ingestion_catalog_file: \"{}\"", normalized_cat);
-        println!("  catalog_file_hash_sha256: \"{}\"", digest);
-    }
-
+fn cmd_seal(catalog: &Path, non_draft: bool) -> Result<()> {
+    let (digest, records, parents) = validate_catalog_file(catalog, non_draft)?;
+    let leaves = records.len().saturating_sub(parents.len());
+    println!("OK: {} verified ({} records, {} leaves).", catalog.display(), records.len(), leaves);
+    println!("digest: \"{}\"", digest);
     Ok(())
 }
 
-fn cmd_validate(manifest_path: &Path, verify_weights: bool) -> Result<()> {
-    if !manifest_path.is_file() {
-        bail!("Manifest not found: {}", manifest_path.display());
+fn cmd_validate_publisher(binding: &Path) -> Result<()> {
+    let validator = build_validator(PUBLISHER_SCHEMA_RAW)?;
+    let val: Value = serde_json::from_str(&fs::read_to_string(binding)?)?;
+    let errs: Vec<String> = validator.iter_errors(&val).map(|e| format!("[{}] {}", e.instance_path(), e)).collect();
+    if !errs.is_empty() {
+        bail!("FAIL: {} failed publisher.schema.json:\n  - {}", binding.display(), errs.join("\n  - "));
+    }
+    println!("OK: {} passed publisher.schema.json (jcs={}).", binding.display(), sha256_bytes(&canonical_json_bytes(&val)));
+    Ok(())
+}
+
+fn collect_digests(v: &Value, out: &mut Vec<String>) {
+    match v {
+        Value::String(s) if s.starts_with("sha256:") || s.starts_with("blake3:") => out.push(s.clone()),
+        Value::Array(a) => for i in a { collect_digests(i, out); },
+        Value::Object(m) => for (_, val) in m { collect_digests(val, out); },
+        _ => {}
+    }
+}
+
+fn cmd_validate(manifest_path: &Path, verify_files: bool, verify_catalog: bool, strict: bool, schema_only: bool) -> Result<()> {
+    let v = parse_yaml_12(manifest_path)?;
+    let validator = build_validator(MOID_SCHEMA_RAW)?;
+    let errs: Vec<String> = validator.iter_errors(&v).map(|e| format!("[{}] {}", e.instance_path(), e)).collect();
+    if !errs.is_empty() {
+        bail!("FAIL [SCHEMA-01]: {}:\n  - {}", manifest_path.display(), errs.join("\n  - "));
+    }
+    println!("OK [SCHEMA-01]: {} passed moid.schema.json (Draft 2020-12).", manifest_path.display());
+    if schema_only { return Ok(()); }
+
+    let mut warnings: Vec<String> = Vec::new();
+    let status = v["manifest_status"].as_str().unwrap_or("draft");
+    let non_draft = status != "draft";
+
+    let moid = v["moid"].as_str().unwrap_or("");
+    let ns = v["publisher"]["namespace"].as_str().unwrap_or("");
+    if moid.split('/').next() != Some(ns) {
+        bail!("FAIL [ID-01]: moid prefix '{}' != publisher.namespace '{}'", moid, ns);
     }
 
-    let raw_yaml = fs::read_to_string(manifest_path)
-        .with_context(|| format!("Failed to read {}", manifest_path.display()))?;
-    let manifest_val: Value = serde_yaml::from_str(&raw_yaml)
-        .with_context(|| format!("Failed to parse YAML in {}", manifest_path.display()))?;
-
-    let root_schema: Value = serde_json::from_str(ROOT_SCHEMA_RAW)
-        .context("Embedded schema.json is invalid JSON")?;
-    let compiled = JSONSchema::compile(&root_schema)
-        .map_err(|e| anyhow::anyhow!("Failed to compile root schema: {}", e))?;
-
-    if let Err(errors) = compiled.validate(&manifest_val) {
-        eprintln!("FAIL: {} failed schema validation:", manifest_path.display());
-        for err in errors {
-            let path = if err.instance_path.to_string().is_empty() {
-                "<root>".to_string()
-            } else {
-                err.instance_path.to_string()
-            };
-            eprintln!("  - [{}] {}", path, err);
-        }
-        std::process::exit(1);
-    }
-    println!(
-        "OK: {} passed schema.json validation.",
-        manifest_path.display()
-    );
-
-    let base_dir = manifest_path.parent().unwrap_or_else(|| Path::new("."));
-
-    if verify_weights {
-        if let Some(checkpoints) = manifest_val.get("checkpoints").and_then(|v| v.as_array()) {
-            let items: Vec<(String, String)> = checkpoints
-                .iter()
-                .map(|cp| {
-                    let rel = cp
-                        .get("path")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string();
-                    let exp = cp
-                        .get("sha256")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string();
-                    (rel, exp)
-                })
-                .collect();
-
-            items
-                .par_iter()
-                .try_for_each(|(rel_path, expected)| -> Result<()> {
-                    let full_path = base_dir.join(rel_path);
-                    if !full_path.is_file() {
-                        bail!("Missing local checkpoint file: {}", full_path.display());
-                    }
-                    let actual = sha256_stream(&full_path)?;
-                    if !actual.eq_ignore_ascii_case(expected) {
-                        bail!(
-                            "SHA-256 mismatch for {}:\n  Expected: {}\n  Actual:   {}",
-                            rel_path,
-                            expected,
-                            actual
-                        );
-                    }
-                    println!("OK: Checkpoint {} verified.", rel_path);
-                    Ok(())
-                })?;
+    if let Some(moe) = v.pointer("/modulus/moe_spec") {
+        if moe["active_experts_per_token"].as_u64() > moe["num_experts"].as_u64() {
+            bail!("FAIL [ARCH-01]: active_experts_per_token exceeds num_experts");
         }
     }
 
-    if let Some(prov) = manifest_val.get("data_provenance") {
-        if let Some(cat_rel) = prov.get("ingestion_catalog_file").and_then(|v| v.as_str()) {
-            let cat_path = base_dir.join(cat_rel);
-            if cat_path.is_file() {
-                let expected_hash = prov
-                    .get("catalog_file_hash_sha256")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
-                let (actual_hash, count) = verify_jsonl_catalog(&cat_path)?;
+    if let (Some(prim), Some(weights)) = (
+        v.pointer("/domain_focus/primary").and_then(|x| x.as_str()),
+        v.pointer("/domain_focus/focus_weights").and_then(|x| x.as_object()),
+    ) {
+        if !weights.contains_key(prim) {
+            bail!("FAIL [FOCUS-01]: domain_focus.primary '{}' not in focus_weights keys", prim);
+        }
+    }
 
-                if !actual_hash.eq_ignore_ascii_case(expected_hash) {
-                    bail!(
-                        "Ingestion catalog SHA-256 mismatch for {}:\n  Expected: {}\n  Actual:   {}",
-                        cat_rel,
-                        expected_hash,
-                        actual_hash
-                    );
+    let mut digests = Vec::new();
+    collect_digests(&v, &mut digests);
+    for d in &digests {
+        if EMPTY_HASHES.contains(&d.as_str()) {
+            if non_draft { bail!("FAIL [HYGIENE-01]: empty-input digest '{}' forbidden in {}", d, status); }
+            warnings.push(format!("WARN [HYGIENE-01]: empty-input digest '{}'", d));
+        }
+    }
+
+    let cp_ids: HashSet<String> = v.get("checkpoints").and_then(|c| c.as_array())
+        .map(|a| a.iter().filter_map(|x| x["id"].as_str().map(String::from)).collect())
+        .unwrap_or_default();
+    let mut produced_by: HashMap<String, String> = HashMap::new();
+    if let Some(acts) = v.pointer("/lineage/derivations").and_then(|d| d.as_array()) {
+        for act in acts {
+            let aid = act["id"].as_str().unwrap_or("?");
+            if let Some(prods) = act.get("produces").and_then(|p| p.as_array()) {
+                for p in prods.iter().filter_map(|x| x.as_str()) {
+                    if !cp_ids.contains(p) { bail!("FAIL [DAG-01]: activity '{}' produces unknown checkpoint '{}'", aid, p); }
+                    if let Some(prev) = produced_by.insert(p.to_string(), aid.to_string()) {
+                        bail!("FAIL [DAG-01]: checkpoint '{}' produced by multiple activities ('{}' and '{}')", p, prev, aid);
+                    }
                 }
-                println!(
-                    "OK: {} verified ({} records, SHA-256 matched).",
-                    cat_rel, count
-                );
+            }
+            let mut sums: HashMap<&str, f64> = HashMap::new();
+            if let Some(inputs) = act.get("inputs").and_then(|i| i.as_array()) {
+                for inp in inputs {
+                    if let Some(lcid) = inp.pointer("/target_ref/local_checkpoint_id").and_then(|x| x.as_str()) {
+                        if !cp_ids.contains(lcid) { bail!("FAIL [DAG-01]: unknown local_checkpoint_id '{}'", lcid); }
+                    }
+                    if let (Some(val), Some(basis)) = (
+                        inp.pointer("/contribution/value").and_then(|x| x.as_f64()),
+                        inp.pointer("/contribution/basis").and_then(|x| x.as_str()),
+                    ) {
+                        *sums.entry(basis).or_insert(0.0) += val;
+                    }
+                }
+            }
+            for basis in ["sample_share", "token_share"] {
+                if let Some(&s) = sums.get(basis) {
+                    if s > 1.0 + 1e-4 { bail!("FAIL [CONTRIB-01]: activity '{}' {} sum {:.4} > 1.0", aid, basis, s); }
+                }
             }
         }
     }
 
-    Ok(())
-}
-
-fn cmd_inspect(manifest_path: &Path) -> Result<()> {
-    let raw_yaml = fs::read_to_string(manifest_path)
-        .with_context(|| format!("Failed to read {}", manifest_path.display()))?;
-    let v: Value = serde_yaml::from_str(&raw_yaml)
-        .with_context(|| format!("Failed to parse YAML in {}", manifest_path.display()))?;
-
-    let moid = v["moid"].as_str().unwrap_or("<unknown>");
-    let name = v["model_name"]
-        .as_str()
-        .or_else(|| v["transformation_name"].as_str())
-        .unwrap_or("<unnamed>");
-    let modulus = v["modulus"].as_str().unwrap_or("<unknown>");
-    let role = v["stack_role"].as_str().unwrap_or("<unspecified>");
-    let primary_domain = v["domain_focus"]["primary"].as_str().unwrap_or("<none>");
-    let tier = v["licensing"]["tier"].as_str().unwrap_or("<unknown>");
-    let spdx = v["licensing"]["spdx_license"].as_str().unwrap_or("<unknown>");
-    let open_w = v["access_control"]["open_weights"].as_bool().unwrap_or(false);
-    let open_c = v["access_control"]["open_code"].as_bool().unwrap_or(false);
-    let open_d = v["access_control"]["open_data"].as_bool().unwrap_or(false);
-    let total_p = v["parameters"]["total_count"].as_u64().unwrap_or(0);
-    let active_p = v["parameters"]["active_count"].as_u64().unwrap_or(total_p);
-    let precision = v["parameters"]["base_precision"].as_str().unwrap_or("?");
-    let cp_count = v["checkpoints"].as_array().map(|a| a.len()).unwrap_or(0);
-    let distilled = v["distillation"]["is_distilled"].as_bool().unwrap_or(false);
-    let upstream = v["stack_spec"]["upstream_moids"]
-        .as_array()
-        .map(|a| a.len())
-        .unwrap_or(0);
-    let downstream = v["stack_spec"]["downstream_moids"]
-        .as_array()
-        .map(|a| a.len())
-        .unwrap_or(0);
-    let catalog = v["data_provenance"]["ingestion_catalog_file"]
-        .as_str()
-        .unwrap_or("<none>");
-
-    println!("MoID:         {}", moid);
-    println!("Name:         {}", name);
-    println!(
-        "Architecture: {} | Role: {} | Focus: {}",
-        modulus, role, primary_domain
-    );
-    println!(
-        "License:      {} ({}) | Open: weights={}, code={}, data={}",
-        tier, spdx, open_w, open_c, open_d
-    );
-    println!(
-        "Parameters:   {} total / {} active ({})",
-        total_p, active_p, precision
-    );
-    if open_w {
-        println!("Checkpoints:  {} file(s)", cp_count);
-    } else {
-        let provider = v["endpoint"]["provider"].as_str().unwrap_or("API");
-        println!("Endpoint:     {} (closed weights)", provider);
-    }
-    println!("Distilled:    {}", distilled);
-    println!(
-        "Stack Links:  upstream={}, downstream={}",
-        upstream, downstream
-    );
-    println!("Provenance:   {}", catalog);
-    Ok(())
-}
-
-fn cmd_diff(old_path: &Path, new_path: &Path) -> Result<()> {
-    let old_v: Value = serde_yaml::from_str(&fs::read_to_string(old_path)?)?;
-    let new_v: Value = serde_yaml::from_str(&fs::read_to_string(new_path)?)?;
-
-    let fields: [(&str, &[&str]); 10] = [
-        ("moid", &["moid"]),
-        ("version", &["version"]),
-        ("modulus", &["modulus"]),
-        ("stack_role", &["stack_role"]),
-        ("licensing.tier", &["licensing", "tier"]),
-        ("licensing.spdx_license", &["licensing", "spdx_license"]),
-        ("parameters.total_count", &["parameters", "total_count"]),
-        ("parameters.active_count", &["parameters", "active_count"]),
-        (
-            "distillation.is_distilled",
-            &["distillation", "is_distilled"],
-        ),
-        (
-            "data_provenance.catalog_file_hash_sha256",
-            &["data_provenance", "catalog_file_hash_sha256"],
-        ),
-    ];
-
-    let mut diffs = 0usize;
-    for (label, path) in fields {
-        let a = path.iter().fold(&old_v, |acc, k| &acc[*k]);
-        let b = path.iter().fold(&new_v, |acc, k| &acc[*k]);
-        if a != b {
-            println!("~ {}: {} -> {}", label, a, b);
-            diffs += 1;
+    if v.pointer("/openness/self_declared_alignment/osaid_1_0").and_then(|x| x.as_bool()) == Some(true) {
+        let base_spdx = v.pointer("/licensing/spdx_expression").and_then(|x| x.as_str()).unwrap_or("");
+        for comp in ["weights", "training_code", "inference_code", "data_information"] {
+            if v["openness"][comp].as_str() != Some("public") {
+                warnings.push(format!("ADVISORY [OPEN-01]: osaid_1_0 claimed but openness.{} is not public", comp));
+            }
+            let eff = v.pointer(&format!("/licensing/component_licenses/{}", comp)).and_then(|x| x.as_str()).unwrap_or(base_spdx);
+            let allowed = if comp == "data_information" {
+                OSI_ALLOWLIST.contains(&eff) || DOC_ALLOWLIST.contains(&eff)
+            } else {
+                OSI_ALLOWLIST.contains(&eff)
+            };
+            if !allowed {
+                warnings.push(format!("ADVISORY [OPEN-01]: osaid_1_0 claimed but {} license '{}' is not in advisory allowlist", comp, eff));
+            }
         }
     }
 
-    if diffs == 0 {
-        println!("No differences detected across tracked MoID fields.");
+    let base_dir = manifest_path.parent().unwrap_or_else(|| Path::new("."));
+
+    if verify_files {
+        if let Some(cps) = v.get("checkpoints").and_then(|c| c.as_array()) {
+            let mut file_tasks = Vec::new();
+            for cp in cps {
+                if let Some(files) = cp["files"].as_array() {
+                    for f in files {
+                        if let Some(dig) = f.get("digest").and_then(|x| x.as_str()) {
+                            if !dig.starts_with("placeholder:") {
+                                file_tasks.push((f["path"].as_str().unwrap().to_string(), dig.to_string(), f.get("byte_size").and_then(|x| x.as_u64())));
+                            }
+                        }
+                    }
+                }
+            }
+            file_tasks.par_iter().try_for_each(|(rel, exp, exp_sz)| -> Result<()> {
+                let (act, sz) = sha256_stream(&base_dir.join(rel))?;
+                if &act != exp { bail!("FAIL [FILE-01]: {} digest mismatch (expected {}, got {})", rel, exp, act); }
+                if let Some(es) = exp_sz { if sz != *es { bail!("FAIL [FILE-01]: {} byte_size mismatch", rel); } }
+                println!("OK [FILE-01]: {} verified (integrity).", rel);
+                Ok(())
+            })?;
+        }
+    }
+
+    if verify_catalog {
+        if let Some(cat_rel) = v.pointer("/data_provenance/ingestion_catalog/path").and_then(|x| x.as_str()) {
+            let cat_path = base_dir.join(cat_rel);
+            let (actual_digest, records, _parents) = validate_catalog_file(&cat_path, non_draft)?;
+            let exp_digest = v.pointer("/data_provenance/ingestion_catalog/digest").and_then(|x| x.as_str()).unwrap_or("");
+            if !exp_digest.starts_with("placeholder:") && actual_digest != exp_digest {
+                bail!("FAIL [CAT-01]: catalog digest mismatch");
+            }
+            if let Some(acts) = v.pointer("/lineage/derivations").and_then(|d| d.as_array()) {
+                for act in acts {
+                    let is_seq_sft = act.pointer("/distillation_spec/mode").and_then(|x| x.as_str()) == Some("sequence_sft");
+                    if let Some(inputs) = act.get("inputs").and_then(|i| i.as_array()) {
+                        for inp in inputs {
+                            if let Some(ids) = inp.get("catalog_record_ids").and_then(|x| x.as_array()) {
+                                let mut any_synth = false;
+                                for rid in ids.iter().filter_map(|x| x.as_str()) {
+                                    let rec = records.get(rid).with_context(|| format!("FAIL [CAT-01]: missing catalog_record_id '{}'", rid))?;
+                                    if rec.pointer("/synthetic/is_synthetic").and_then(|x| x.as_bool()) == Some(true)
+                                        && rec.pointer("/synthetic/generator_ref").is_some()
+                                    {
+                                        any_synth = true;
+                                        if let Some(gb) = inp.get("generated_by") {
+                                            if gb != rec.pointer("/synthetic/generator_ref").unwrap() {
+                                                bail!("FAIL [CAT-01]: input generated_by disagrees with catalog generator_ref on '{}'", rid);
+                                            }
+                                        }
+                                    }
+                                }
+                                if is_seq_sft && !any_synth && inp.get("generated_by").is_none() {
+                                    bail!("FAIL [CAT-01]: sequence_sft catalog_record_ids must include at least one synthetic record with generator_ref");
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            println!("OK [CAT-01]: {} verified ({} records).", cat_rel, records.len());
+        }
+    }
+
+    for w in &warnings { eprintln!("{}", w); }
+    if strict && (status == "draft" || !warnings.is_empty()) {
+        bail!("FAIL [STRICT-01]: strict mode rejected draft status or {} warning(s)", warnings.len());
+    }
+    Ok(())
+}
+
+fn cmd_inspect(manifest_path: &Path, verify_files: bool) -> Result<()> {
+    let v = parse_yaml_12(manifest_path)?;
+    let jcs_digest = sha256_bytes(&canonical_json_bytes(&v));
+    let mut disclosed = 0usize;
+    let mut partial = 0usize;
+    let mut undisclosed = 0usize;
+    for sec in DISCLOSURE_SECTIONS {
+        match v.get(sec).and_then(|s| s.get("disclosure_status")).and_then(|x| x.as_str()) {
+            Some("disclosed") => disclosed += 1,
+            Some("partial") => partial += 1,
+            _ => undisclosed += 1,
+        }
+    }
+    println!("Manifest ID:  ({}, {})", v["moid"].as_str().unwrap_or("?"), jcs_digest);
+    println!("Name/Version: {} ({}) [{}]", v["name"].as_str().unwrap_or("?"), v["model_version"].as_str().unwrap_or("?"), v["manifest_status"].as_str().unwrap_or("?"));
+    println!("Assertion:    {} by {}", v["manifest_assertion"]["assertion_type"].as_str().unwrap_or("?"), v["manifest_assertion"]["asserted_by"]["name"].as_str().unwrap_or("?"));
+    println!("Stack Role:   {} | Modulus: {}/{}", v["stack_roles"]["primary_role"].as_str().unwrap_or("?"), v["modulus"]["family"].as_str().unwrap_or("undisclosed"), v["modulus"]["paradigm"].as_str().unwrap_or("undisclosed"));
+    println!("Disclosure:   {}/6 disclosed, {}/6 partial, {}/6 undisclosed/unknown", disclosed, partial, undisclosed);
+    if verify_files {
+        cmd_validate(manifest_path, true, false, false, false)?;
+        println!("Verified Run: SCHEMA-01 + FILE-01 (integrity) executed.");
+    } else {
+        println!("Verified Run: 0 external checks verified (run with --verify-files / --verify-catalog to verify).");
+    }
+    Ok(())
+}
+
+fn cmd_diff(old_p: &Path, new_p: &Path) -> Result<()> {
+    let a = parse_yaml_12(old_p)?;
+    let b = parse_yaml_12(new_p)?;
+    for ptr in ["/moid", "/model_version", "/manifest_status", "/modulus/family", "/stack_roles/primary_role", "/parameters/total", "/licensing/spdx_expression"] {
+        if a.pointer(ptr) != b.pointer(ptr) {
+            println!("~ {}: {:?} -> {:?}", ptr, a.pointer(ptr), b.pointer(ptr));
+        }
     }
     Ok(())
 }
