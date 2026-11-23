@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://moid.info/schemas/v0.3.0-rc4/moid.schema.json",
-  "title": "MoID Model Manifest Specification v0.3.0-rc4",
+  "$id": "https://moid.info/schemas/v0.3.0-rc5/moid.schema.json",
+  "title": "MoID Model Manifest Specification v0.3.0-rc5",
   "type": "object",
   "required": [
     "spec_version", "manifest_status", "moid", "name", "model_version",
@@ -12,8 +12,8 @@
   "patternProperties": { "^x-": {} },
   "properties": {
     "$schema": { "type": "string", "format": "uri", "x-verification": { "verifier": "none", "assurance": "self_declared" } },
-    "spec_version": { "const": "0.3.0-rc4", "x-verification": { "verifier": "none", "assurance": "self_declared" } },
-    "manifest_status": { "enum": ["draft", "release", "deprecated"], "x-verification": { "verifier": "none", "assurance": "self_declared" } },
+    "spec_version": { "const": "0.3.0-rc5", "x-verification": { "verifier": "none", "assurance": "self_declared" } },
+    "manifest_status": { "type": "string", "enum": ["draft", "release", "deprecated"], "x-verification": { "verifier": "none", "assurance": "self_declared" } },
     "moid": { "$ref": "common.schema.json#/$defs/moidSlug", "x-verification": { "verifier": "none", "assurance": "self_declared" } },
     "name": { "type": "string", "minLength": 1, "x-verification": { "verifier": "none", "assurance": "self_declared" } },
     "model_version": { "type": "string", "minLength": 1, "x-verification": { "verifier": "none", "assurance": "self_declared" } },
@@ -28,7 +28,7 @@
       "x-verification": { "verifier": "online", "assurance": "self_declared" },
       "required": ["namespace", "display_name"],
       "properties": {
-        "namespace": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,62}$" },
+        "namespace": { "$ref": "common.schema.json#/$defs/namespaceSlug" },
         "display_name": { "type": "string", "minLength": 1 },
         "url": { "type": "string", "format": "uri" },
         "binding_uri": { "type": "string", "format": "uri" }
@@ -49,25 +49,49 @@
           },
           "unevaluatedProperties": false
         },
-        "assertion_type": { "enum": ["first_party", "third_party_description"] },
+        "assertion_type": { "type": "string", "enum": ["first_party", "third_party_description"] },
         "asserted_at": { "type": "string", "format": "date-time" },
         "attestation": {
           "type": "object",
           "required": ["format", "path", "canonicalization"],
           "properties": {
-            "format": { "enum": ["dsse-in-toto-v1", "sigstore-bundle-v0.3", "pgp-detached-v1", "ssh-sig-v1"] },
+            "format": { "type": "string", "enum": ["dsse-in-toto-v1", "sigstore-bundle-v0.3", "pgp-detached-v1", "ssh-sig-v1", "minisign-v1"] },
             "path": { "type": "string", "minLength": 1 },
             "predicate_type": { "const": "https://moid.info/attestations/manifest/v0.3" },
             "canonicalization": { "const": "rfc8785-jcs" }
           },
-          "if": { "required": ["format"], "properties": { "format": { "enum": ["dsse-in-toto-v1", "sigstore-bundle-v0.3"] } } },
-          "then": { "required": ["predicate_type"] },
+          "if": { "type": "object", "required": ["format"], "properties": { "format": { "enum": ["dsse-in-toto-v1", "sigstore-bundle-v0.3"] } } },
+          "then": { "type": "object", "required": ["predicate_type"], "properties": { "predicate_type": true } },
           "unevaluatedProperties": false
         },
         "evidence": { "$ref": "common.schema.json#/$defs/evidenceList" }
       },
-      "if": { "required": ["attestation"] },
-      "then": { "properties": { "asserted_by": { "required": ["identity"] } } },
+      "allOf": [
+        {
+          "if": { "type": "object", "required": ["attestation"], "properties": { "attestation": true } },
+          "then": { "type": "object", "required": ["asserted_by"], "properties": { "asserted_by": { "type": "object", "required": ["identity"], "properties": { "identity": true } } } }
+        },
+        {
+          "if": { "type": "object", "required": ["attestation"], "properties": { "attestation": { "type": "object", "required": ["format"], "properties": { "format": { "const": "pgp-detached-v1" } } } } },
+          "then": { "type": "object", "required": ["asserted_by"], "properties": { "asserted_by": { "type": "object", "required": ["identity"], "properties": { "identity": { "type": "object", "required": ["kind"], "properties": { "kind": { "const": "pgp" } } } } } } }
+        },
+        {
+          "if": { "type": "object", "required": ["attestation"], "properties": { "attestation": { "type": "object", "required": ["format"], "properties": { "format": { "const": "ssh-sig-v1" } } } } },
+          "then": { "type": "object", "required": ["asserted_by"], "properties": { "asserted_by": { "type": "object", "required": ["identity"], "properties": { "identity": { "type": "object", "required": ["kind"], "properties": { "kind": { "const": "ssh" } } } } } } }
+        },
+        {
+          "if": { "type": "object", "required": ["attestation"], "properties": { "attestation": { "type": "object", "required": ["format"], "properties": { "format": { "const": "minisign-v1" } } } } },
+          "then": { "type": "object", "required": ["asserted_by"], "properties": { "asserted_by": { "type": "object", "required": ["identity"], "properties": { "identity": { "type": "object", "required": ["kind"], "properties": { "kind": { "const": "minisign" } } } } } } }
+        },
+        {
+          "if": { "type": "object", "required": ["attestation"], "properties": { "attestation": { "type": "object", "required": ["format"], "properties": { "format": { "const": "dsse-in-toto-v1" } } } } },
+          "then": { "type": "object", "required": ["asserted_by"], "properties": { "asserted_by": { "type": "object", "required": ["identity"], "properties": { "identity": { "type": "object", "required": ["kind"], "properties": { "kind": { "const": "key" } } } } } } }
+        },
+        {
+          "if": { "type": "object", "required": ["attestation"], "properties": { "attestation": { "type": "object", "required": ["format"], "properties": { "format": { "const": "sigstore-bundle-v0.3" } } } } },
+          "then": { "type": "object", "required": ["asserted_by"], "properties": { "asserted_by": { "type": "object", "required": ["identity"], "properties": { "identity": { "type": "object", "required": ["kind"], "properties": { "kind": { "enum": ["oidc", "key"] } } } } } } }
+        }
+      ],
       "unevaluatedProperties": false
     },
     "modulus": {
@@ -77,34 +101,25 @@
       "patternProperties": { "^x-": {} },
       "properties": {
         "disclosure_status": { "$ref": "common.schema.json#/$defs/disclosureStatus" },
-        "family": { "enum": ["transformer", "ssm", "cnn", "rnn", "gnn", "neural_operator", "mlp", "hybrid"] },
-        "paradigm": {
-          "enum": [
-            "autoregressive", "masked_lm", "diffusion", "flow_matching",
-            "gan", "vae", "ebm", "discriminative", "rl_policy",
-            "multimodal_joint", "operator_mapping"
-          ]
-        },
+        "family": { "type": "string", "enum": ["transformer", "ssm", "cnn", "rnn", "gnn", "neural_operator", "mlp", "hybrid"] },
+        "paradigm": { "type": "string", "enum": ["autoregressive", "masked_lm", "diffusion", "flow_matching", "gan", "vae", "ebm", "discriminative", "rl_policy", "multimodal_joint", "operator_mapping"] },
         "model_type": { "type": "string" },
         "components": {
-          "type": "array",
-          "minItems": 2,
+          "type": "array", "minItems": 2,
           "items": {
-            "type": "object",
-            "required": ["role", "family"],
+            "type": "object", "required": ["role", "family"],
             "properties": {
               "role": { "type": "string", "minLength": 1 },
-              "family": { "enum": ["transformer", "ssm", "cnn", "rnn", "gnn", "neural_operator", "mlp"] },
+              "family": { "type": "string", "enum": ["transformer", "ssm", "cnn", "rnn", "gnn", "neural_operator", "mlp"] },
               "layer_count": { "type": "integer", "minimum": 1 }
             },
             "unevaluatedProperties": false
           }
         },
         "transformer_spec": {
-          "type": "object",
-          "x-verification": { "verifier": "local-file", "assurance": "consistency" },
+          "type": "object", "x-verification": { "verifier": "local-file", "assurance": "consistency" },
           "properties": {
-            "topology": { "enum": ["decoder_only", "encoder_only", "encoder_decoder"] },
+            "topology": { "type": "string", "enum": ["decoder_only", "encoder_only", "encoder_decoder"] },
             "num_layers": { "type": "integer", "minimum": 1 },
             "hidden_size": { "type": "integer", "minimum": 1 },
             "num_attention_heads": { "type": "integer", "minimum": 1 },
@@ -115,8 +130,7 @@
           "unevaluatedProperties": false
         },
         "moe_spec": {
-          "type": "object",
-          "x-verification": { "verifier": "local-file", "assurance": "consistency" },
+          "type": "object", "x-verification": { "verifier": "local-file", "assurance": "consistency" },
           "required": ["num_experts", "active_experts_per_token"],
           "properties": {
             "num_experts": { "type": "integer", "minimum": 2 },
@@ -127,8 +141,7 @@
           "unevaluatedProperties": false
         },
         "ssm_spec": {
-          "type": "object",
-          "x-verification": { "verifier": "local-file", "assurance": "consistency" },
+          "type": "object", "x-verification": { "verifier": "local-file", "assurance": "consistency" },
           "properties": {
             "variant": { "type": "string" },
             "state_size": { "type": "integer", "minimum": 1 },
@@ -138,8 +151,7 @@
           "unevaluatedProperties": false
         },
         "gnn_spec": {
-          "type": "object",
-          "x-verification": { "verifier": "none", "assurance": "self_declared" },
+          "type": "object", "x-verification": { "verifier": "none", "assurance": "self_declared" },
           "properties": {
             "message_passing_layers": { "type": "integer", "minimum": 1 },
             "edge_feature_dim": { "type": "integer", "minimum": 0 },
@@ -148,10 +160,9 @@
           "unevaluatedProperties": false
         },
         "neural_operator_spec": {
-          "type": "object",
-          "x-verification": { "verifier": "none", "assurance": "self_declared" },
+          "type": "object", "x-verification": { "verifier": "none", "assurance": "self_declared" },
           "properties": {
-            "operator_kind": { "enum": ["fno", "deeponet", "gno", "uno", "cno", "other"] },
+            "operator_kind": { "type": "string", "enum": ["fno", "deeponet", "gno", "uno", "cno", "other"] },
             "spatial_dimensions": { "type": "integer", "minimum": 1 },
             "modes": { "type": "array", "items": { "type": "integer", "minimum": 1 } }
           },
@@ -161,19 +172,22 @@
       },
       "allOf": [
         {
-          "if": { "required": ["disclosure_status"], "properties": { "disclosure_status": { "const": "disclosed" } } },
-          "then": { "required": ["family", "paradigm"] }
+          "if": { "type": "object", "required": ["disclosure_status"], "properties": { "disclosure_status": { "const": "disclosed" } } },
+          "then": { "type": "object", "required": ["family", "paradigm"], "properties": { "family": true, "paradigm": true } }
         },
         {
-          "if": { "required": ["family"], "properties": { "family": { "const": "hybrid" } } },
-          "then": { "required": ["components"] }
+          "if": { "type": "object", "required": ["disclosure_status"], "properties": { "disclosure_status": { "enum": ["undisclosed", "unknown"] } } },
+          "then": { "type": "object", "properties": { "family": false, "paradigm": false, "model_type": false, "components": false, "transformer_spec": false, "moe_spec": false, "ssm_spec": false, "gnn_spec": false, "neural_operator_spec": false } }
+        },
+        {
+          "if": { "type": "object", "required": ["family"], "properties": { "family": { "const": "hybrid" } } },
+          "then": { "type": "object", "required": ["components"], "properties": { "components": true } }
         }
       ],
       "unevaluatedProperties": false
     },
     "stack_roles": {
-      "type": "object",
-      "x-verification": { "verifier": "none", "assurance": "self_declared" },
+      "type": "object", "x-verification": { "verifier": "none", "assurance": "self_declared" },
       "required": ["primary_role"],
       "properties": {
         "primary_role": { "$ref": "#/$defs/stackRole" },
@@ -182,20 +196,16 @@
       "unevaluatedProperties": false
     },
     "stack_spec": {
-      "type": "object",
-      "x-verification": { "verifier": "none", "assurance": "self_declared" },
+      "type": "object", "x-verification": { "verifier": "none", "assurance": "self_declared" },
       "patternProperties": { "^x-": {} },
       "properties": {
-        "decision_semantics": {
-          "enum": ["discrete_action", "continuous_control", "routing_dispatch", "symbolic_verdict", "token_emission", "field_evolution", "embedding_projection"]
-        },
+        "decision_semantics": { "type": "string", "enum": ["discrete_action", "continuous_control", "routing_dispatch", "symbolic_verdict", "token_emission", "field_evolution", "embedding_projection"] },
         "deterministic": { "type": "boolean" },
         "action_space": { "type": "object" },
         "runtime_inputs": {
           "type": "array",
           "items": {
-            "type": "object",
-            "required": ["moid"],
+            "type": "object", "required": ["moid"],
             "properties": {
               "moid": { "$ref": "common.schema.json#/$defs/moidSlug" },
               "interface": { "type": "string", "minLength": 1 },
@@ -208,8 +218,7 @@
       "unevaluatedProperties": false
     },
     "modalities": {
-      "type": "object",
-      "x-verification": { "verifier": "none", "assurance": "self_declared" },
+      "type": "object", "x-verification": { "verifier": "none", "assurance": "self_declared" },
       "required": ["input", "output"],
       "properties": {
         "input": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "common.schema.json#/$defs/modality" } },
@@ -218,35 +227,33 @@
       "unevaluatedProperties": false
     },
     "domain_focus": {
-      "type": "object",
-      "x-verification": { "verifier": "none", "assurance": "self_declared" },
+      "type": "object", "x-verification": { "verifier": "none", "assurance": "self_declared" },
       "required": ["disclosure_status"],
       "properties": {
         "disclosure_status": { "$ref": "common.schema.json#/$defs/disclosureStatus" },
-        "basis": { "enum": ["declared_intent", "evaluated_benchmark", "training_mix_proxy"] },
+        "basis": { "type": "string", "enum": ["declared_intent", "evaluated_benchmark", "training_mix_proxy"] },
         "primary": { "type": "string", "minLength": 1 },
-        "focus_weights": {
-          "type": "object",
-          "minProperties": 1,
-          "additionalProperties": { "type": "number", "minimum": 0, "maximum": 1 }
-        },
+        "focus_weights": { "type": "object", "minProperties": 1, "additionalProperties": { "type": "number", "minimum": 0, "maximum": 1 } },
         "evidence": { "$ref": "common.schema.json#/$defs/evidenceList" }
       },
       "allOf": [
         {
-          "if": { "required": ["disclosure_status"], "properties": { "disclosure_status": { "const": "disclosed" } } },
-          "then": { "required": ["basis", "primary", "focus_weights"] }
+          "if": { "type": "object", "required": ["disclosure_status"], "properties": { "disclosure_status": { "const": "disclosed" } } },
+          "then": { "type": "object", "required": ["basis", "primary", "focus_weights"], "properties": { "basis": true, "primary": true, "focus_weights": true } }
         },
         {
-          "if": { "required": ["basis"], "properties": { "basis": { "const": "evaluated_benchmark" } } },
-          "then": { "required": ["evidence"], "properties": { "evidence": { "minItems": 1 } } }
+          "if": { "type": "object", "required": ["disclosure_status"], "properties": { "disclosure_status": { "enum": ["undisclosed", "unknown"] } } },
+          "then": { "type": "object", "properties": { "basis": false, "primary": false, "focus_weights": false } }
+        },
+        {
+          "if": { "type": "object", "required": ["basis"], "properties": { "basis": { "const": "evaluated_benchmark" } } },
+          "then": { "type": "object", "required": ["evidence"], "properties": { "evidence": { "type": "array", "minItems": 1 } } }
         }
       ],
       "unevaluatedProperties": false
     },
     "parameters": {
-      "type": "object",
-      "x-verification": { "verifier": "local-file", "assurance": "consistency" },
+      "type": "object", "x-verification": { "verifier": "local-file", "assurance": "consistency" },
       "required": ["disclosure_status"],
       "properties": {
         "disclosure_status": { "$ref": "common.schema.json#/$defs/disclosureStatus" },
@@ -255,13 +262,20 @@
         "base_precision": { "type": "string" },
         "evidence": { "$ref": "common.schema.json#/$defs/evidenceList" }
       },
-      "if": { "required": ["disclosure_status"], "properties": { "disclosure_status": { "const": "disclosed" } } },
-      "then": { "required": ["total"] },
+      "allOf": [
+        {
+          "if": { "type": "object", "required": ["disclosure_status"], "properties": { "disclosure_status": { "const": "disclosed" } } },
+          "then": { "type": "object", "required": ["total"], "properties": { "total": true } }
+        },
+        {
+          "if": { "type": "object", "required": ["disclosure_status"], "properties": { "disclosure_status": { "enum": ["undisclosed", "unknown"] } } },
+          "then": { "type": "object", "properties": { "total": false, "active": false, "base_precision": false } }
+        }
+      ],
       "unevaluatedProperties": false
     },
     "runtime": {
-      "type": "object",
-      "x-verification": { "verifier": "local-file", "assurance": "integrity" },
+      "type": "object", "x-verification": { "verifier": "local-file", "assurance": "integrity" },
       "properties": {
         "min_vram_gb": { "type": "number", "minimum": 0, "x-verification": { "verifier": "none", "assurance": "self_declared" } },
         "recommended_max_context": { "type": "integer", "minimum": 1, "x-verification": { "verifier": "none", "assurance": "self_declared" } },
@@ -274,36 +288,41 @@
       "unevaluatedProperties": false
     },
     "lineage": {
-      "type": "object",
-      "x-verification": { "verifier": "online", "assurance": "resolvability" },
+      "type": "object", "x-verification": { "verifier": "online", "assurance": "resolvability" },
       "required": ["disclosure_status"],
       "properties": {
         "disclosure_status": { "$ref": "common.schema.json#/$defs/disclosureStatus" },
-        "weight_initialization": { "enum": ["random", "from_model", "unknown"] },
+        "weight_initialization": { "type": "string", "enum": ["random", "from_model", "unknown"] },
         "derivations": { "type": "array", "items": { "$ref": "#/$defs/derivationActivity" } },
         "evidence": { "$ref": "common.schema.json#/$defs/evidenceList" }
       },
       "allOf": [
         {
-          "if": { "required": ["disclosure_status"], "properties": { "disclosure_status": { "const": "disclosed" } } },
-          "then": {
-            "required": ["weight_initialization"],
-            "properties": { "weight_initialization": { "enum": ["random", "from_model"] } }
-          }
+          "if": { "type": "object", "required": ["disclosure_status"], "properties": { "disclosure_status": { "const": "disclosed" } } },
+          "then": { "type": "object", "required": ["weight_initialization"], "properties": { "weight_initialization": { "enum": ["random", "from_model"] } } }
         },
         {
-          "if": { "required": ["weight_initialization"], "properties": { "weight_initialization": { "const": "from_model" } } },
+          "if": { "type": "object", "required": ["disclosure_status"], "properties": { "disclosure_status": { "enum": ["undisclosed", "unknown"] } } },
+          "then": { "type": "object", "properties": { "weight_initialization": false, "derivations": false } }
+        },
+        {
+          "if": { "type": "object", "required": ["weight_initialization"], "properties": { "weight_initialization": { "const": "from_model" } } },
           "then": {
-            "required": ["derivations"],
+            "type": "object", "required": ["derivations"],
             "properties": {
               "derivations": {
-                "minItems": 1,
+                "type": "array", "minItems": 1,
                 "contains": {
+                  "type": "object", "required": ["inputs"],
                   "properties": {
                     "inputs": {
+                      "type": "array",
                       "contains": {
-                        "required": ["role"],
-                        "properties": { "role": { "enum": ["base_weights", "merge_parent", "quantize_source"] } }
+                        "type": "object", "required": ["role", "target_ref"],
+                        "properties": {
+                          "role": { "enum": ["base_weights", "merge_parent", "quantize_source"] },
+                          "target_ref": { "$ref": "common.schema.json#/$defs/externalTargetRef" }
+                        }
                       }
                     }
                   }
@@ -313,19 +332,21 @@
           }
         },
         {
-          "if": { "required": ["weight_initialization"], "properties": { "weight_initialization": { "const": "random" } } },
+          "if": { "type": "object", "required": ["weight_initialization"], "properties": { "weight_initialization": { "const": "random" } } },
           "then": {
+            "type": "object",
             "properties": {
               "derivations": {
+                "type": "array",
                 "items": {
+                  "type": "object",
                   "properties": {
                     "inputs": {
+                      "type": "array",
                       "items": {
-                        "if": {
-                          "required": ["role"],
-                          "properties": { "role": { "enum": ["base_weights", "merge_parent", "quantize_source"] } }
-                        },
-                        "then": { "properties": { "target_ref": { "required": ["local_checkpoint_id"] } } }
+                        "type": "object",
+                        "if": { "type": "object", "required": ["role"], "properties": { "role": { "enum": ["base_weights", "merge_parent", "quantize_source"] } } },
+                        "then": { "type": "object", "required": ["target_ref"], "properties": { "target_ref": { "type": "object", "required": ["local_checkpoint_id"], "properties": { "local_checkpoint_id": true } } } }
                       }
                     }
                   }
@@ -338,8 +359,7 @@
       "unevaluatedProperties": false
     },
     "checkpoints": {
-      "type": "array",
-      "x-verification": { "verifier": "local-file", "assurance": "integrity" },
+      "type": "array", "x-verification": { "verifier": "local-file", "assurance": "integrity" },
       "minItems": 1,
       "items": {
         "type": "object",
@@ -347,16 +367,14 @@
         "patternProperties": { "^x-": {} },
         "properties": {
           "id": { "type": "string", "minLength": 1 },
-          "artifact_kind": { "enum": ["full_weights", "adapter", "imatrix", "tokenizer", "config", "other"] },
-          "format": { "enum": ["safetensors", "gguf", "onnx", "pytorch_bin", "hdf5", "mlx", "exl2", "flax_msgpack", "other"] },
-          "precision": { "enum": ["fp32", "fp16", "bf16", "fp8", "int8", "int4", "int3", "int2", "mixed", "unknown"] },
+          "artifact_kind": { "type": "string", "enum": ["full_weights", "adapter", "imatrix", "tokenizer", "config", "other"] },
+          "format": { "type": "string", "enum": ["safetensors", "gguf", "onnx", "pytorch_bin", "hdf5", "mlx", "exl2", "flax_msgpack", "other"] },
+          "precision": { "type": "string", "enum": ["fp32", "fp16", "bf16", "fp8", "int8", "int4", "int3", "int2", "mixed", "unknown"] },
           "quantization_scheme": { "type": "string" },
           "files": {
-            "type": "array",
-            "minItems": 1,
+            "type": "array", "minItems": 1,
             "items": {
-              "type": "object",
-              "required": ["path"],
+              "type": "object", "required": ["path"],
               "properties": {
                 "path": { "type": "string", "minLength": 1 },
                 "digest": { "$ref": "common.schema.json#/$defs/digest" },
@@ -370,8 +388,7 @@
       }
     },
     "endpoint": {
-      "type": "object",
-      "x-verification": { "verifier": "online", "assurance": "resolvability" },
+      "type": "object", "x-verification": { "verifier": "online", "assurance": "resolvability" },
       "required": ["provider", "model_identifier"],
       "properties": {
         "provider": { "type": "string", "minLength": 1 },
@@ -381,8 +398,7 @@
       "unevaluatedProperties": false
     },
     "licensing": {
-      "type": "object",
-      "x-verification": { "verifier": "online", "assurance": "resolvability" },
+      "type": "object", "x-verification": { "verifier": "online", "assurance": "resolvability" },
       "required": ["disclosure_status"],
       "properties": {
         "disclosure_status": { "$ref": "common.schema.json#/$defs/disclosureStatus" },
@@ -401,17 +417,21 @@
         "custom_license_url": { "type": "string", "format": "uri" },
         "upstream_inherited_licenses": { "type": "array", "items": { "type": "string" } },
         "restrictions": {
-          "type": "array",
-          "items": { "enum": ["non_commercial", "no_distillation", "no_derivative_models", "geographic", "mau_cap", "acceptable_use_policy"] },
-          "uniqueItems": true
+          "type": "array", "uniqueItems": true,
+          "items": { "type": "string", "enum": ["non_commercial", "no_distillation", "no_derivative_models", "geographic", "mau_cap", "acceptable_use_policy"] }
         },
         "evidence": { "$ref": "common.schema.json#/$defs/evidenceList" }
       },
+      "allOf": [
+        {
+          "if": { "type": "object", "required": ["disclosure_status"], "properties": { "disclosure_status": { "enum": ["undisclosed", "unknown"] } } },
+          "then": { "type": "object", "properties": { "spdx_expression": false, "component_licenses": false, "custom_license_url": false, "upstream_inherited_licenses": false, "restrictions": false } }
+        }
+      ],
       "unevaluatedProperties": false
     },
     "openness": {
-      "type": "object",
-      "x-verification": { "verifier": "none", "assurance": "self_declared" },
+      "type": "object", "x-verification": { "verifier": "none", "assurance": "self_declared" },
       "required": ["weights", "training_code", "inference_code", "data_information", "training_data"],
       "properties": {
         "weights": { "$ref": "common.schema.json#/$defs/availabilityState" },
@@ -423,7 +443,7 @@
           "type": "object",
           "properties": {
             "osaid_1_0": { "type": "boolean" },
-            "mof_class": { "enum": ["class_i_open_science", "class_ii_open_tooling", "class_iii_open_model", "none"] }
+            "mof_class": { "type": "string", "enum": ["class_i_open_science", "class_ii_open_tooling", "class_iii_open_model", "none"] }
           },
           "unevaluatedProperties": false
         }
@@ -431,8 +451,7 @@
       "unevaluatedProperties": false
     },
     "data_provenance": {
-      "type": "object",
-      "x-verification": { "verifier": "catalog", "assurance": "consistency" },
+      "type": "object", "x-verification": { "verifier": "catalog", "assurance": "consistency" },
       "required": ["disclosure_status"],
       "properties": {
         "disclosure_status": { "$ref": "common.schema.json#/$defs/disclosureStatus" },
@@ -442,7 +461,7 @@
           "properties": {
             "path": { "type": "string", "minLength": 1 },
             "digest": { "$ref": "common.schema.json#/$defs/digest" },
-            "schema_version": { "const": "0.3.0-rc4" },
+            "schema_version": { "const": "0.3.0-rc5" },
             "tokenizer_ref": { "$ref": "common.schema.json#/$defs/tokenizerRef" }
           },
           "unevaluatedProperties": false
@@ -452,98 +471,91 @@
           "properties": {
             "total_tokens": { "type": "integer", "minimum": 0 },
             "total_samples": { "type": "integer", "minimum": 0 },
-            "domain_distribution": {
-              "type": "object",
-              "additionalProperties": { "type": "number", "minimum": 0, "maximum": 1 }
-            },
-            "contains_synthetic_data": { "enum": ["yes", "no", "unknown"] },
+            "domain_distribution": { "type": "object", "additionalProperties": { "type": "number", "minimum": 0, "maximum": 1 } },
+            "contains_synthetic_data": { "type": "string", "enum": ["yes", "no", "unknown"] },
             "notes": { "type": "string" }
           },
           "unevaluatedProperties": false
         },
         "evidence": { "$ref": "common.schema.json#/$defs/evidenceList" }
       },
+      "allOf": [
+        {
+          "if": { "type": "object", "required": ["disclosure_status"], "properties": { "disclosure_status": { "enum": ["undisclosed", "unknown"] } } },
+          "then": { "type": "object", "properties": { "ingestion_catalog": false, "declared_summary": false } }
+        }
+      ],
       "unevaluatedProperties": false
     },
     "reproducibility": {
-      "type": "object",
-      "x-verification": { "verifier": "online", "assurance": "resolvability" },
+      "type": "object", "x-verification": { "verifier": "online", "assurance": "resolvability" },
       "required": ["level"],
       "properties": {
-        "level": { "enum": ["full", "partial", "none", "unknown"] },
+        "level": { "type": "string", "enum": ["full", "partial", "none", "unknown"] },
         "code_repo": { "type": "string", "format": "uri" },
         "code_commit": { "$ref": "common.schema.json#/$defs/commit" },
         "config_digest": { "$ref": "common.schema.json#/$defs/digest" },
         "hardware_summary": { "type": "string" },
         "seeds": { "type": "array", "items": { "type": "integer" } }
       },
-      "if": { "required": ["level"], "properties": { "level": { "const": "full" } } },
-      "then": { "required": ["code_repo", "code_commit", "config_digest"] },
+      "if": { "type": "object", "required": ["level"], "properties": { "level": { "const": "full" } } },
+      "then": { "type": "object", "required": ["code_repo", "code_commit", "config_digest"], "properties": { "code_repo": true, "code_commit": true, "config_digest": true } },
       "unevaluatedProperties": false
     }
   },
   "allOf": [
     {
-      "if": {
-        "required": ["openness"],
-        "properties": { "openness": { "required": ["weights"], "properties": { "weights": { "enum": ["public", "gated"] } } } }
-      },
-      "then": { "required": ["checkpoints"] }
+      "if": { "type": "object", "required": ["openness"], "properties": { "openness": { "type": "object", "required": ["weights"], "properties": { "weights": { "enum": ["public", "gated"] } } } } },
+      "then": { "type": "object", "required": ["checkpoints"], "properties": { "checkpoints": true } }
+    },
+    {
+      "if": { "type": "object", "required": ["manifest_assertion"], "properties": { "manifest_assertion": { "type": "object", "required": ["assertion_type"], "properties": { "assertion_type": { "const": "third_party_description" } } } } },
+      "then": { "type": "object", "properties": { "openness": { "type": "object", "properties": { "self_declared_alignment": false } } } }
     },
     {
       "if": {
-        "required": ["manifest_assertion"],
-        "properties": { "manifest_assertion": { "required": ["assertion_type"], "properties": { "assertion_type": { "const": "third_party_description" } } } }
-      },
-      "then": { "properties": { "openness": { "properties": { "self_declared_alignment": false } } } }
-    },
-    {
-      "if": {
-        "required": ["manifest_assertion"],
-        "properties": { "manifest_assertion": { "required": ["attestation"] } }
-      },
-      "then": { "properties": { "manifest_status": { "not": { "const": "draft" } } } }
-    },
-    {
-      "if": {
-        "required": ["reproducibility"],
-        "properties": { "reproducibility": { "required": ["level"], "properties": { "level": { "const": "full" } } } }
-      },
-      "then": {
+        "type": "object", "required": ["manifest_status", "manifest_assertion"],
         "properties": {
-          "openness": {
-            "properties": {
-              "training_code": { "const": "public" },
-              "training_data": { "enum": ["public", "gated"] }
-            }
-          }
+          "manifest_status": { "not": { "const": "draft" } },
+          "manifest_assertion": { "type": "object", "required": ["assertion_type"], "properties": { "assertion_type": { "const": "third_party_description" } } }
         }
-      }
+      },
+      "then": { "type": "object", "required": ["manifest_assertion"], "properties": { "manifest_assertion": { "type": "object", "required": ["evidence"], "properties": { "evidence": { "type": "array", "minItems": 1 } } } } }
     },
     {
-      "if": {
-        "required": ["manifest_status"],
-        "properties": { "manifest_status": { "not": { "const": "draft" } } }
-      },
+      "if": { "type": "object", "required": ["manifest_assertion"], "properties": { "manifest_assertion": { "type": "object", "required": ["attestation"], "properties": { "attestation": true } } } },
+      "then": { "type": "object", "properties": { "manifest_status": { "not": { "const": "draft" } } } }
+    },
+    {
+      "if": { "type": "object", "required": ["reproducibility"], "properties": { "reproducibility": { "type": "object", "required": ["level"], "properties": { "level": { "const": "full" } } } } },
+      "then": { "type": "object", "properties": { "openness": { "type": "object", "properties": { "training_code": { "const": "public" }, "training_data": { "enum": ["public", "gated"] } } } } }
+    },
+    {
+      "if": { "type": "object", "required": ["manifest_status"], "properties": { "manifest_status": { "not": { "const": "draft" } } } },
       "then": { "$ref": "#/$defs/nonDraftStrict" }
     },
     {
       "if": {
-        "required": ["manifest_status", "manifest_assertion", "checkpoints"],
+        "type": "object", "required": ["manifest_status", "manifest_assertion", "checkpoints"],
         "properties": {
           "manifest_status": { "not": { "const": "draft" } },
-          "manifest_assertion": { "required": ["assertion_type"], "properties": { "assertion_type": { "const": "first_party" } } }
+          "manifest_assertion": { "type": "object", "required": ["assertion_type"], "properties": { "assertion_type": { "const": "first_party" } } },
+          "checkpoints": true
         }
       },
       "then": {
+        "type": "object",
         "properties": {
           "checkpoints": {
+            "type": "array",
             "items": {
+              "type": "object",
               "properties": {
                 "files": {
+                  "type": "array",
                   "items": {
-                    "required": ["digest", "byte_size"],
-                    "properties": { "digest": { "$ref": "common.schema.json#/$defs/strictDigest" } }
+                    "type": "object", "required": ["digest", "byte_size"],
+                    "properties": { "digest": { "$ref": "common.schema.json#/$defs/strictDigest" }, "byte_size": true }
                   }
                 }
               }
@@ -554,97 +566,78 @@
     },
     {
       "if": {
-        "required": ["lineage"],
-        "properties": {
-          "lineage": {
-            "required": ["derivations"],
-            "properties": { "derivations": { "contains": { "required": ["produces_endpoint"] } } }
-          }
-        }
+        "type": "object", "required": ["lineage"],
+        "properties": { "lineage": { "type": "object", "required": ["derivations"], "properties": { "derivations": { "type": "array", "contains": { "type": "object", "required": ["produces_endpoint"], "properties": { "produces_endpoint": true } } } } } }
       },
-      "then": { "required": ["endpoint"] }
+      "then": { "type": "object", "required": ["endpoint"], "properties": { "endpoint": true } }
     }
   ],
   "unevaluatedProperties": false,
   "$defs": {
     "stackRole": {
-      "enum": [
-        "generator", "decision_policy", "router", "planner", "verifier",
-        "critic_reward", "world_model", "perception_encoder", "memory_indexer",
-        "orchestrator", "embedder", "reranker", "classifier", "guardrail",
-        "transcoder", "hybrid"
-      ]
+      "type": "string",
+      "enum": ["generator", "decision_policy", "router", "planner", "verifier", "critic_reward", "world_model", "perception_encoder", "memory_indexer", "orchestrator", "embedder", "reranker", "classifier", "guardrail", "transcoder", "hybrid"]
     },
     "activityTargetRef": {
+      "type": "object",
       "oneOf": [
-        {
-          "type": "object",
-          "required": ["local_checkpoint_id"],
-          "properties": { "local_checkpoint_id": { "type": "string", "minLength": 1 } },
-          "unevaluatedProperties": false
-        },
+        { "type": "object", "required": ["local_checkpoint_id"], "properties": { "local_checkpoint_id": { "type": "string", "minLength": 1 } }, "unevaluatedProperties": false },
         { "$ref": "common.schema.json#/$defs/externalTargetRef" }
       ]
     },
     "derivationActivity": {
-      "type": "object",
-      "required": ["id", "activity_type", "inputs"],
+      "type": "object", "required": ["id", "activity_type", "inputs"],
       "patternProperties": { "^x-": {} },
       "properties": {
         "id": { "type": "string", "minLength": 1 },
-        "activity_type": {
-          "enum": ["fine_tune", "distill", "merge", "quantize", "adapter", "continued_pretrain", "prune", "rl_post_train", "other"]
-        },
+        "activity_type": { "type": "string", "enum": ["fine_tune", "distill", "merge", "quantize", "adapter", "continued_pretrain", "prune", "rl_post_train", "other"] },
         "performed_by": { "type": "string", "minLength": 1 },
         "recipe_digest": { "$ref": "common.schema.json#/$defs/digest" },
         "inputs": {
-          "type": "array",
-          "minItems": 1,
+          "type": "array", "minItems": 1,
           "items": {
-            "type": "object",
-            "required": ["role"],
+            "type": "object", "required": ["role"],
             "properties": {
-              "role": {
-                "enum": ["base_weights", "teacher", "merge_parent", "quantize_source", "training_data", "calibration_data", "reward_model", "other"]
-              },
+              "role": { "type": "string", "enum": ["base_weights", "teacher", "merge_parent", "quantize_source", "training_data", "calibration_data", "reward_model", "other"] },
               "target_ref": { "$ref": "#/$defs/activityTargetRef" },
               "generated_by": { "$ref": "common.schema.json#/$defs/externalTargetRef" },
               "catalog_record_ids": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
               "undisclosed_summary": { "type": "string", "minLength": 1 },
               "loss_targets": { "type": "array", "items": { "type": "string" } },
               "contribution": {
-                "type": "object",
-                "required": ["value", "basis"],
+                "type": "object", "required": ["value", "basis"],
                 "properties": {
                   "value": { "type": "number", "minimum": 0 },
-                  "basis": { "enum": ["loss_weight", "sample_share", "token_share", "merge_weight"] }
+                  "basis": { "type": "string", "enum": ["loss_weight", "sample_share", "token_share", "merge_weight"] }
                 },
                 "unevaluatedProperties": false
               }
             },
             "allOf": [
               {
-                "if": { "required": ["role"], "properties": { "role": { "enum": ["base_weights", "teacher", "merge_parent", "quantize_source", "reward_model"] } } },
-                "then": { "required": ["target_ref"], "properties": { "generated_by": false, "catalog_record_ids": false, "undisclosed_summary": false } }
+                "if": { "type": "object", "required": ["role"], "properties": { "role": { "enum": ["base_weights", "teacher", "merge_parent", "quantize_source", "reward_model"] } } },
+                "then": { "type": "object", "required": ["target_ref"], "properties": { "target_ref": true, "generated_by": false, "catalog_record_ids": false, "undisclosed_summary": false } }
               },
               {
-                "if": { "required": ["role"], "properties": { "role": { "enum": ["training_data", "calibration_data"] } } },
+                "if": { "type": "object", "required": ["role"], "properties": { "role": { "enum": ["training_data", "calibration_data"] } } },
                 "then": {
+                  "type": "object",
                   "anyOf": [
-                    { "required": ["target_ref"] },
-                    { "required": ["catalog_record_ids"] },
-                    { "required": ["undisclosed_summary"] }
+                    { "type": "object", "required": ["target_ref"], "properties": { "target_ref": true } },
+                    { "type": "object", "required": ["catalog_record_ids"], "properties": { "catalog_record_ids": true } },
+                    { "type": "object", "required": ["undisclosed_summary"], "properties": { "undisclosed_summary": true } }
                   ],
                   "properties": { "loss_targets": false }
                 }
               },
               {
-                "if": { "required": ["role"], "properties": { "role": { "const": "other" } } },
+                "if": { "type": "object", "required": ["role"], "properties": { "role": { "const": "other" } } },
                 "then": {
+                  "type": "object",
                   "anyOf": [
-                    { "required": ["target_ref"] },
-                    { "required": ["catalog_record_ids"] },
-                    { "required": ["undisclosed_summary"] }
+                    { "type": "object", "required": ["target_ref"], "properties": { "target_ref": true } },
+                    { "type": "object", "required": ["catalog_record_ids"], "properties": { "catalog_record_ids": true } },
+                    { "type": "object", "required": ["undisclosed_summary"], "properties": { "undisclosed_summary": true } }
                   ]
                 }
               }
@@ -655,47 +648,36 @@
         "produces": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
         "produces_endpoint": { "const": true },
         "distillation_spec": {
-          "type": "object",
-          "required": ["mode"],
+          "type": "object", "required": ["mode"],
           "properties": {
-            "mode": { "enum": ["sequence_sft", "logit_kl", "hidden_state_alignment", "cross_paradigm", "hybrid"] },
-            "feature_alignment": {
-              "type": "object",
-              "properties": { "adapter_type": { "type": "string" }, "layer_mapping": { "type": "string" } },
-              "unevaluatedProperties": false
-            }
+            "mode": { "type": "string", "enum": ["sequence_sft", "logit_kl", "hidden_state_alignment", "cross_paradigm", "hybrid"] },
+            "feature_alignment": { "type": "object", "properties": { "adapter_type": { "type": "string" }, "layer_mapping": { "type": "string" } }, "unevaluatedProperties": false }
           },
           "unevaluatedProperties": false
         },
         "quantization_spec": {
-          "type": "object",
-          "required": ["method"],
+          "type": "object", "required": ["method"],
           "properties": {
             "method": { "type": "string", "minLength": 1 },
             "nominal_bits": { "type": "integer", "minimum": 1, "maximum": 32 },
             "effective_bits_per_weight": { "type": "number", "minimum": 0.5, "maximum": 32 },
-            "tool": { "type": "string" },
-            "tool_version": { "type": "string" }
+            "tool": { "type": "string" }, "tool_version": { "type": "string" }
           },
           "unevaluatedProperties": false
         },
         "merge_spec": {
-          "type": "object",
-          "required": ["method"],
+          "type": "object", "required": ["method"],
           "properties": {
-            "method": { "enum": ["linear", "slerp", "ties", "dare_ties", "dare_linear", "task_arithmetic", "frankenmerge", "other"] },
+            "method": { "type": "string", "enum": ["linear", "slerp", "ties", "dare_ties", "dare_linear", "task_arithmetic", "frankenmerge", "other"] },
             "parameters": { "type": "object" }
           },
           "unevaluatedProperties": false
         },
         "adapter_spec": {
-          "type": "object",
-          "required": ["method"],
+          "type": "object", "required": ["method"],
           "properties": {
-            "method": { "enum": ["lora", "qlora", "dora", "ia3", "prefix_tuning", "other"] },
-            "rank": { "type": "integer", "minimum": 1 },
-            "alpha": { "type": "number" },
-            "merged_into_weights": { "type": "boolean" }
+            "method": { "type": "string", "enum": ["lora", "qlora", "dora", "ia3", "prefix_tuning", "other"] },
+            "rank": { "type": "integer", "minimum": 1 }, "alpha": { "type": "number" }, "merged_into_weights": { "type": "boolean" }
           },
           "unevaluatedProperties": false
         },
@@ -704,26 +686,30 @@
       "allOf": [
         {
           "oneOf": [
-            { "required": ["produces"], "not": { "required": ["produces_endpoint"] } },
-            { "required": ["produces_endpoint"], "not": { "required": ["produces"] } }
+            { "type": "object", "required": ["produces"], "properties": { "produces": true }, "not": { "type": "object", "required": ["produces_endpoint"], "properties": { "produces_endpoint": true } } },
+            { "type": "object", "required": ["produces_endpoint"], "properties": { "produces_endpoint": true }, "not": { "type": "object", "required": ["produces"], "properties": { "produces": true } } }
           ]
         },
         {
-          "if": { "required": ["activity_type"], "properties": { "activity_type": { "const": "distill" } } },
+          "if": { "type": "object", "required": ["activity_type"], "properties": { "activity_type": { "const": "distill" } } },
           "then": {
-            "required": ["distillation_spec"],
-            "properties": { "quantization_spec": false, "merge_spec": false, "adapter_spec": false },
+            "type": "object", "required": ["distillation_spec"],
+            "properties": { "distillation_spec": true, "quantization_spec": false, "merge_spec": false, "adapter_spec": false },
             "allOf": [
               {
-                "if": { "required": ["distillation_spec"], "properties": { "distillation_spec": { "required": ["mode"], "properties": { "mode": { "const": "sequence_sft" } } } } },
+                "if": { "type": "object", "required": ["distillation_spec"], "properties": { "distillation_spec": { "type": "object", "required": ["mode"], "properties": { "mode": { "const": "sequence_sft" } } } } },
                 "then": {
+                  "type": "object",
                   "properties": {
                     "inputs": {
-                      "items": { "properties": { "role": { "enum": ["base_weights", "training_data", "other"] } } },
+                      "type": "array",
+                      "items": { "type": "object", "properties": { "role": { "enum": ["base_weights", "training_data", "other"] } } },
                       "contains": {
-                        "required": ["role"],
-                        "properties": { "role": { "const": "training_data" } },
-                        "anyOf": [{ "required": ["generated_by"] }, { "required": ["catalog_record_ids"] }]
+                        "type": "object", "required": ["role"], "properties": { "role": { "const": "training_data" } },
+                        "anyOf": [
+                          { "type": "object", "required": ["generated_by"], "properties": { "generated_by": true } },
+                          { "type": "object", "required": ["catalog_record_ids"], "properties": { "catalog_record_ids": true } }
+                        ]
                       },
                       "minContains": 1
                     }
@@ -731,12 +717,14 @@
                 }
               },
               {
-                "if": { "required": ["distillation_spec"], "properties": { "distillation_spec": { "required": ["mode"], "properties": { "mode": { "enum": ["logit_kl", "hidden_state_alignment", "cross_paradigm", "hybrid"] } } } } },
+                "if": { "type": "object", "required": ["distillation_spec"], "properties": { "distillation_spec": { "type": "object", "required": ["mode"], "properties": { "mode": { "enum": ["logit_kl", "hidden_state_alignment", "cross_paradigm", "hybrid"] } } } } },
                 "then": {
+                  "type": "object",
                   "properties": {
                     "inputs": {
-                      "items": { "properties": { "role": { "enum": ["base_weights", "teacher", "training_data", "other"] } } },
-                      "contains": { "required": ["role"], "properties": { "role": { "const": "teacher" } } },
+                      "type": "array",
+                      "items": { "type": "object", "properties": { "role": { "enum": ["base_weights", "teacher", "training_data", "other"] } } },
+                      "contains": { "type": "object", "required": ["role"], "properties": { "role": { "const": "teacher" } } },
                       "minContains": 1
                     }
                   }
@@ -746,123 +734,139 @@
           }
         },
         {
-          "if": { "required": ["activity_type"], "properties": { "activity_type": { "const": "quantize" } } },
+          "if": { "type": "object", "required": ["activity_type"], "properties": { "activity_type": { "const": "quantize" } } },
           "then": {
-            "required": ["quantization_spec"],
+            "type": "object", "required": ["quantization_spec"],
             "properties": {
-              "distillation_spec": false, "merge_spec": false, "adapter_spec": false,
+              "quantization_spec": true, "distillation_spec": false, "merge_spec": false, "adapter_spec": false,
               "inputs": {
-                "items": { "properties": { "role": { "enum": ["quantize_source", "calibration_data"] } } },
-                "contains": { "required": ["role"], "properties": { "role": { "const": "quantize_source" } } },
+                "type": "array",
+                "items": { "type": "object", "properties": { "role": { "enum": ["quantize_source", "calibration_data"] } } },
+                "contains": { "type": "object", "required": ["role"], "properties": { "role": { "const": "quantize_source" } } },
                 "minContains": 1, "maxContains": 1
               }
             }
           }
         },
         {
-          "if": { "required": ["activity_type"], "properties": { "activity_type": { "const": "merge" } } },
+          "if": { "type": "object", "required": ["activity_type"], "properties": { "activity_type": { "const": "merge" } } },
           "then": {
-            "required": ["merge_spec"],
+            "type": "object", "required": ["merge_spec"],
             "properties": {
-              "distillation_spec": false, "quantization_spec": false, "adapter_spec": false,
+              "merge_spec": true, "distillation_spec": false, "quantization_spec": false, "adapter_spec": false,
               "inputs": {
-                "items": { "properties": { "role": { "enum": ["merge_parent", "base_weights"] } } },
-                "contains": { "required": ["role"], "properties": { "role": { "const": "merge_parent" } } },
+                "type": "array",
+                "items": { "type": "object", "properties": { "role": { "enum": ["merge_parent", "base_weights"] } } },
+                "contains": { "type": "object", "required": ["role"], "properties": { "role": { "const": "merge_parent" } } },
                 "minContains": 2
               }
             }
           }
         },
         {
-          "if": { "required": ["activity_type"], "properties": { "activity_type": { "const": "adapter" } } },
+          "if": { "type": "object", "required": ["activity_type"], "properties": { "activity_type": { "const": "adapter" } } },
           "then": {
-            "required": ["adapter_spec"],
+            "type": "object", "required": ["adapter_spec"],
             "properties": {
-              "distillation_spec": false, "quantization_spec": false, "merge_spec": false,
+              "adapter_spec": true, "distillation_spec": false, "quantization_spec": false, "merge_spec": false,
               "inputs": {
-                "items": { "properties": { "role": { "enum": ["base_weights", "teacher", "training_data", "other"] } } },
-                "contains": { "required": ["role"], "properties": { "role": { "const": "base_weights" } } },
+                "type": "array",
+                "items": { "type": "object", "properties": { "role": { "enum": ["base_weights", "teacher", "training_data", "other"] } } },
+                "contains": { "type": "object", "required": ["role"], "properties": { "role": { "const": "base_weights" } } },
                 "minContains": 1, "maxContains": 1
               }
             }
           }
         },
         {
-          "if": { "required": ["activity_type"], "properties": { "activity_type": { "enum": ["fine_tune", "continued_pretrain"] } } },
+          "if": { "type": "object", "required": ["activity_type"], "properties": { "activity_type": { "enum": ["fine_tune", "continued_pretrain"] } } },
           "then": {
-            "properties": {
-              "distillation_spec": false, "quantization_spec": false, "merge_spec": false, "adapter_spec": false,
-              "inputs": {
-                "items": { "properties": { "role": { "enum": ["base_weights", "training_data", "other"] } } },
-                "contains": { "required": ["role"], "properties": { "role": { "const": "base_weights" } } },
-                "minContains": 1, "maxContains": 1
-              }
-            }
-          }
-        },
-        {
-          "if": { "required": ["activity_type"], "properties": { "activity_type": { "const": "rl_post_train" } } },
-          "then": {
+            "type": "object",
             "properties": {
               "distillation_spec": false, "quantization_spec": false, "merge_spec": false, "adapter_spec": false,
               "inputs": {
-                "items": { "properties": { "role": { "enum": ["base_weights", "reward_model", "training_data", "other"] } } },
-                "contains": { "required": ["role"], "properties": { "role": { "const": "base_weights" } } },
+                "type": "array",
+                "items": { "type": "object", "properties": { "role": { "enum": ["base_weights", "training_data", "other"] } } },
+                "contains": { "type": "object", "required": ["role"], "properties": { "role": { "const": "base_weights" } } },
                 "minContains": 1, "maxContains": 1
               }
             }
           }
         },
         {
-          "if": { "required": ["activity_type"], "properties": { "activity_type": { "const": "prune" } } },
+          "if": { "type": "object", "required": ["activity_type"], "properties": { "activity_type": { "const": "rl_post_train" } } },
           "then": {
+            "type": "object",
             "properties": {
               "distillation_spec": false, "quantization_spec": false, "merge_spec": false, "adapter_spec": false,
               "inputs": {
-                "items": { "properties": { "role": { "enum": ["base_weights", "calibration_data", "other"] } } },
-                "contains": { "required": ["role"], "properties": { "role": { "const": "base_weights" } } },
+                "type": "array",
+                "items": { "type": "object", "properties": { "role": { "enum": ["base_weights", "reward_model", "training_data", "other"] } } },
+                "contains": { "type": "object", "required": ["role"], "properties": { "role": { "const": "base_weights" } } },
                 "minContains": 1, "maxContains": 1
               }
             }
           }
         },
         {
-          "if": { "required": ["activity_type"], "properties": { "activity_type": { "const": "other" } } },
+          "if": { "type": "object", "required": ["activity_type"], "properties": { "activity_type": { "const": "prune" } } },
           "then": {
-            "properties": { "distillation_spec": false, "quantization_spec": false, "merge_spec": false, "adapter_spec": false }
+            "type": "object",
+            "properties": {
+              "distillation_spec": false, "quantization_spec": false, "merge_spec": false, "adapter_spec": false,
+              "inputs": {
+                "type": "array",
+                "items": { "type": "object", "properties": { "role": { "enum": ["base_weights", "calibration_data", "other"] } } },
+                "contains": { "type": "object", "required": ["role"], "properties": { "role": { "const": "base_weights" } } },
+                "minContains": 1, "maxContains": 1
+              }
+            }
           }
+        },
+        {
+          "if": { "type": "object", "required": ["activity_type"], "properties": { "activity_type": { "const": "other" } } },
+          "then": { "type": "object", "properties": { "distillation_spec": false, "quantization_spec": false, "merge_spec": false, "adapter_spec": false } }
         }
       ],
       "unevaluatedProperties": false
     },
     "nonDraftStrict": {
+      "type": "object",
       "properties": {
         "runtime": {
+          "type": "object",
           "properties": {
             "chat_template_digest": { "$ref": "common.schema.json#/$defs/strictDigest" },
             "tokenizer_config_digest": { "$ref": "common.schema.json#/$defs/strictDigest" }
           }
         },
         "lineage": {
+          "type": "object",
           "properties": {
             "derivations": {
+              "type": "array",
               "items": {
+                "type": "object",
                 "properties": {
                   "recipe_digest": { "$ref": "common.schema.json#/$defs/strictDigest" },
                   "inputs": {
+                    "type": "array",
                     "items": {
+                      "type": "object",
                       "properties": {
                         "target_ref": {
+                          "type": "object",
                           "properties": {
                             "manifest_digest": { "$ref": "common.schema.json#/$defs/strictDigest" },
-                            "content_digests": { "items": { "$ref": "common.schema.json#/$defs/strictDigest" } },
+                            "content_digests": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/strictDigest" } },
                             "revision": { "$ref": "common.schema.json#/$defs/strictRevision" }
                           }
                         },
                         "generated_by": {
+                          "type": "object",
                           "properties": {
                             "manifest_digest": { "$ref": "common.schema.json#/$defs/strictDigest" },
-                            "content_digests": { "items": { "$ref": "common.schema.json#/$defs/strictDigest" } },
+                            "content_digests": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/strictDigest" } },
                             "revision": { "$ref": "common.schema.json#/$defs/strictRevision" }
                           }
                         }
@@ -875,23 +879,28 @@
           }
         },
         "checkpoints": {
+          "type": "array",
           "items": {
+            "type": "object",
             "properties": {
-              "files": { "items": { "properties": { "digest": { "$ref": "common.schema.json#/$defs/strictDigest" } } } }
+              "files": { "type": "array", "items": { "type": "object", "properties": { "digest": { "$ref": "common.schema.json#/$defs/strictDigest" } } } }
             }
           }
         },
         "data_provenance": {
+          "type": "object",
           "properties": {
             "ingestion_catalog": {
+              "type": "object",
               "properties": {
                 "digest": { "$ref": "common.schema.json#/$defs/strictDigest" },
-                "tokenizer_ref": { "properties": { "digest": { "$ref": "common.schema.json#/$defs/strictDigest" } } }
+                "tokenizer_ref": { "type": "object", "properties": { "digest": { "$ref": "common.schema.json#/$defs/strictDigest" } } }
               }
             }
           }
         },
         "reproducibility": {
+          "type": "object",
           "properties": {
             "code_commit": { "$ref": "common.schema.json#/$defs/strictCommit" },
             "config_digest": { "$ref": "common.schema.json#/$defs/strictDigest" }

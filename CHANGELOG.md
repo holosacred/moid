@@ -1,13 +1,16 @@
 # Changelog
 
+## v0.3.0-rc5 (2026-11-22)
+- **Full Ajv Strict Compliance:** Added explicit `type` and `required` property stubs across all Draft 2020-12 subschemas so `common`, `moid`, `ingestion`, and `publisher` compile with `strict: true` and `strictRequired: true` enabled (zero relaxed flags).
+- **Closed Schema Loopholes (G01–G04):**
+  - `weight_initialization: "from_model"` now requires at least one external `externalTargetRef` parent (local-only quantize rejected).
+  - Enforced attestation format $\leftrightarrow$ `asserted_by.identity.kind` matrix and added `minisign-v1` format.
+  - Non-draft `third_party_description` manifests require `manifest_assertion.evidence` (`minItems: 1`).
+  - `disclosure_status: "undisclosed" | "unknown"` now forbids substantive section data fields (only `disclosure_status` and `evidence` allowed).
+- **Hardened Publisher Binding (`publisher.schema.json` + `PUB-01`):**
+  - Added required `serial`, `expires_at`, `namespace_claim` (`domain_exact | platform_bidirectional | policy_pinned`), hostname validation on `domain`, and structured `revoked_identities[].revoked_at`.
+  - Allowed domain-exact namespaces (e.g., `moid.info/model`) in `namespaceSlug` and `moidSlug`.
+  - Added CLI rule `PUB-01` rejecting `expires_at <= updated_at`, allowed/revoked identity overlap, and `domain_exact` namespace mismatches.
+
 ## v0.3.0-rc4 (2026-11-22)
-### Breaking Changes from v0.2.0
-- **JSON Schema Draft 2020-12:** Upgraded from Draft-07; split shared vocabulary into `common.schema.json` and pinned `$id` URIs to `https://moid.info/schemas/v0.3.0-rc4/`.
-- **Versioning & Identity:** Renamed `moid_version` -> `spec_version`; `version` -> `model_version`; versionless `moid` slug paired with `(moid, manifest_digest)` identity and optional case-sensitive `source_ids`. Added `manifest_status` (`draft | release | deprecated`).
-- **Epistemology & Disclosure:** Added document-level `manifest_assertion` (`first_party | third_party_description`) with structured cryptographic `asserted_by.identity` (`pgp`, `ssh`, `oidc`, `minisign`, `key`) and per-section `disclosure_status` across 6 sections (`modulus`, `domain_focus`, `parameters`, `lineage`, `licensing`, `data_provenance`).
-- **Signed Publisher Binding:** Added `publisher.schema.json` (`.well-known/moid-publisher.json`) supporting GPG/OpenPGP (`pgp-detached-v1`), SSH (`ssh-sig-v1`), Sigstore (`sigstore-bundle-v0.3`), and DNS TXT (`_moid.<domain>`) bindings. Resolver tie-breaks use transparency-log or RFC 3161 timestamps only (never self-declared `asserted_at`).
-- **Structured `modulus` & Runtime Topology:** Upgraded `modulus` to structured `{ family, paradigm, components, transformer_spec, moe_spec, ssm_spec, gnn_spec, neural_operator_spec }`. Renamed `stack_spec.upstream_moids` -> `stack_spec.runtime_inputs` and permanently dropped `downstream_moids`.
-- **PROV-Inspired N-ary `lineage.derivations[]`:** Replaced top-level `distillation` with unified N-ary activities (`inputs[]` -> `produces[]` / `produces_endpoint: true`) with schema-enforced 1-to-1 specs and required input roles across all 9 activity types. Replaced `is_foundation_from_scratch` with `weight_initialization` (`random | from_model | unknown`).
-- **Prefixed Digests, Revisions & Commits:** Unified digests (`sha256:`, `sha512:`, `blake3:`, draft-only `placeholder:`), revisions (`git-sha1:`, `git-sha256:`, `hf-rev:`, `oci-digest:`), and `reproducibility.code_commit` (`git-sha1:` / `git-sha256:` prefix required; bare 40-hex SHAs rejected). Renamed `checkpoint_digests` -> `content_digests` and structured `ingestion_catalog.tokenizer_ref` with a required `digest`.
-- **Openness & Licensing:** Replaced coarse booleans with orthogonal 5-state availability (`public | partial | gated | private | unknown`) plus per-component `licensing.component_licenses`. `OPEN-01` is labeled advisory pending OSAID 1.0 legal verification.
-- **Verification Telemetry:** Added `x-verification: { verifier, assurance }` (`self_declared | consistency | resolvability | integrity | authorship`) and `moid inspect` disclosure + verified-this-run reporting.
+- Upgraded to Draft 2020-12, `moid.info` `$id` URIs, structured `modulus`, PROV-inspired N-ary `derivations[]`, `x-verification` `{ verifier, assurance }`, prefixed `code_commit`/`revision`/`digest`, and dual Rust + Ajv conformance testing.

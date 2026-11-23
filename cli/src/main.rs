@@ -9,13 +9,13 @@ use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 
-const COMMON_SCHEMA_RAW: &str = include_str!("../../schemas/v0.3.0-rc4/common.schema.json");
-const MOID_SCHEMA_RAW: &str = include_str!("../../schemas/v0.3.0-rc4/moid.schema.json");
-const INGESTION_SCHEMA_RAW: &str = include_str!("../../schemas/v0.3.0-rc4/ingestion.schema.json");
-const PUBLISHER_SCHEMA_RAW: &str = include_str!("../../schemas/v0.3.0-rc4/publisher.schema.json");
+const COMMON_SCHEMA_RAW: &str = include_str!("../../schemas/v0.3.0-rc5/common.schema.json");
+const MOID_SCHEMA_RAW: &str = include_str!("../../schemas/v0.3.0-rc5/moid.schema.json");
+const INGESTION_SCHEMA_RAW: &str = include_str!("../../schemas/v0.3.0-rc5/ingestion.schema.json");
+const PUBLISHER_SCHEMA_RAW: &str = include_str!("../../schemas/v0.3.0-rc5/publisher.schema.json");
 const TEMPLATE_RAW: &str = include_str!("../../template.moid.yaml");
 
-const COMMON_ID: &str = "https://moid.info/schemas/v0.3.0-rc4/common.schema.json";
+const COMMON_ID: &str = "https://moid.info/schemas/v0.3.0-rc5/common.schema.json";
 const DISCLOSURE_SECTIONS: [&str; 6] = [
     "modulus", "domain_focus", "parameters", "lineage", "licensing", "data_provenance",
 ];
@@ -287,7 +287,28 @@ fn cmd_validate_publisher(binding: &Path) -> Result<()> {
     if !errs.is_empty() {
         bail!("FAIL: {} failed publisher.schema.json:\n  - {}", binding.display(), errs.join("\n  - "));
     }
-    println!("OK: {} passed publisher.schema.json (jcs={}).", binding.display(), sha256_bytes(&canonical_json_bytes(&val)));
+    let updated = val["updated_at"].as_str().unwrap_or("");
+    let expires = val["expires_at"].as_str().unwrap_or("");
+    if expires <= updated {
+        bail!("FAIL [PUB-01]: expires_at ({}) must be strictly after updated_at ({})", expires, updated);
+    }
+    if val.pointer("/namespace_claim/mode").and_then(|v| v.as_str()) == Some("domain_exact") {
+        let ns = val["namespace"].as_str().unwrap_or("");
+        let dom = val["domain"].as_str().unwrap_or("");
+        if ns != dom {
+            bail!("FAIL [PUB-01]: domain_exact claim requires namespace '{}' == domain '{}'", ns, dom);
+        }
+    }
+    let allowed: HashSet<Vec<u8>> = val["allowed_identities"]
+        .as_array().map(|a| a.iter().map(canonical_json_bytes).collect()).unwrap_or_default();
+    if let Some(revs) = val.get("revoked_identities").and_then(|v| v.as_array()) {
+        for r in revs {
+            if allowed.contains(&canonical_json_bytes(&r["identity"])) {
+                bail!("FAIL [PUB-01]: identity appears in both allowed_identities and revoked_identities");
+            }
+        }
+    }
+    println!("OK [PUB-01]: {} passed publisher.schema.json (jcs={}).", binding.display(), sha256_bytes(&canonical_json_bytes(&val)));
     Ok(())
 }
 

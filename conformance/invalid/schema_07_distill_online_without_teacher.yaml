@@ -1,9 +1,9 @@
-$schema: https://moid.info/schemas/v0.3.0-rc4/moid.schema.json
-spec_version: 0.3.0-rc4
+$schema: https://moid.info/schemas/v0.3.0-rc5/moid.schema.json
+spec_version: 0.3.0-rc5
 manifest_status: draft
 moid: holosacred/arbiter-nano-hybrid
 name: Arbiter Nano Hybrid SSM-Transformer Policy
-model_version: 0.3.0-rc4
+model_version: 0.3.0-rc5
 released_at: 2026-11-22
 publisher:
   namespace: holosacred
@@ -166,7 +166,7 @@ data_provenance:
   ingestion_catalog:
     path: ./ingestion_manifest.jsonl
     digest: placeholder:ingestion-catalog-file
-    schema_version: 0.3.0-rc4
+    schema_version: 0.3.0-rc5
     tokenizer_ref:
       moid: holosacred/arbiter-bpe-64k
       digest: placeholder:arbiter-bpe-64k-tokenizer

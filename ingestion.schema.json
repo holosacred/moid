@@ -1,19 +1,19 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://moid.info/schemas/v0.3.0-rc4/ingestion.schema.json",
-  "title": "MoID Ingestion Catalog Record v0.3.0-rc4",
+  "$id": "https://moid.info/schemas/v0.3.0-rc5/ingestion.schema.json",
+  "title": "MoID Ingestion Catalog Record v0.3.0-rc5",
   "type": "object",
   "required": ["record_id", "record_level", "source_category", "modalities", "license_status"],
   "patternProperties": { "^x-": {} },
   "properties": {
     "record_id": { "type": "string", "minLength": 1 },
     "parent_record_id": { "type": "string", "minLength": 1 },
-    "record_level": { "enum": ["corpus", "dataset", "crawl_snapshot", "shard", "document"] },
-    "source_category": { "enum": ["public_dataset", "private_dataset", "web_crawl", "user_data", "synthetic"] },
+    "record_level": { "type": "string", "enum": ["corpus", "dataset", "crawl_snapshot", "shard", "document"] },
+    "source_category": { "type": "string", "enum": ["public_dataset", "private_dataset", "web_crawl", "user_data", "synthetic"] },
     "locator": { "type": "string", "format": "uri" },
     "retrieved_at": { "type": "string", "format": "date-time" },
     "digest": { "$ref": "common.schema.json#/$defs/digest" },
-    "digest_scope": { "enum": ["raw_bytes", "processed_bytes", "tokenized_bytes"] },
+    "digest_scope": { "type": "string", "enum": ["raw_bytes", "processed_bytes", "tokenized_bytes"] },
     "modalities": {
       "type": "array",
       "minItems": 1,
@@ -24,10 +24,10 @@
     "sample_count": { "type": "integer", "minimum": 0 },
     "epochs": { "type": "number", "minimum": 0 },
     "sampling_weight": { "type": "number", "minimum": 0, "maximum": 1 },
-    "split": { "enum": ["pretrain", "midtrain", "sft", "distillation", "alignment", "eval"] },
+    "split": { "type": "string", "enum": ["pretrain", "midtrain", "sft", "distillation", "alignment", "eval"] },
     "domain_tags": { "type": "array", "items": { "type": "string", "minLength": 1 } },
     "top_domains": { "type": "array", "items": { "type": "string", "minLength": 1 } },
-    "license_status": { "enum": ["spdx", "custom", "public_domain", "mixed", "unlicensed", "unknown"] },
+    "license_status": { "type": "string", "enum": ["spdx", "custom", "public_domain", "mixed", "unlicensed", "unknown"] },
     "spdx_expression": { "type": "string", "minLength": 1 },
     "rights_reservations": {
       "type": "object",
@@ -53,16 +53,16 @@
   },
   "allOf": [
     {
-      "if": { "required": ["license_status"], "properties": { "license_status": { "const": "spdx" } } },
-      "then": { "required": ["spdx_expression"] }
+      "if": { "type": "object", "required": ["license_status"], "properties": { "license_status": { "const": "spdx" } } },
+      "then": { "type": "object", "required": ["spdx_expression"], "properties": { "spdx_expression": true } }
     },
     {
-      "if": { "required": ["digest"] },
-      "then": { "required": ["digest_scope"] }
+      "if": { "type": "object", "required": ["digest"], "properties": { "digest": true } },
+      "then": { "type": "object", "required": ["digest_scope"], "properties": { "digest_scope": true } }
     },
     {
-      "if": { "required": ["record_level"], "properties": { "record_level": { "enum": ["shard", "document"] } } },
-      "then": { "required": ["digest", "digest_scope"] }
+      "if": { "type": "object", "required": ["record_level"], "properties": { "record_level": { "enum": ["shard", "document"] } } },
+      "then": { "type": "object", "required": ["digest", "digest_scope"], "properties": { "digest": true, "digest_scope": true } }
     }
   ],
   "unevaluatedProperties": false
