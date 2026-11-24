@@ -90,4 +90,20 @@ fn test_publisher_serial_rollback_equivocation_and_net05_backlink() {
         .args(["validate-publisher", b2_eq.to_str().unwrap(), "--serial-state", state.to_str().unwrap()])
         .output().unwrap();
     assert!(!eq.status.success() && String::from_utf8_lossy(&eq.stderr).contains("serial equivocation"));
+
+    // 5. NET-06 DNS TXT anchor pass & mismatch
+    let ok_out = String::from_utf8_lossy(&ok.stdout);
+    let jcs_part = ok_out.split("jcs=").nth(1).unwrap().split(')').next().unwrap();
+    let dns_ok = dir.path().join("dns_ok.txt");
+    let dns_bad = dir.path().join("dns_bad.txt");
+    fs::write(&dns_ok, format!("v=moid1; jcs={}\n", jcs_part)).unwrap();
+    fs::write(&dns_bad, "v=moid1; jcs=sha256:0000000000000000000000000000000000000000000000000000000000000000\n").unwrap();
+    let d_pass = Command::new(moid_bin())
+        .args(["validate-publisher", b2_path.to_str().unwrap(), "--dns-txt-file", dns_ok.to_str().unwrap()])
+        .output().unwrap();
+    assert!(d_pass.status.success(), "Expected NET-06 PASS: {}", String::from_utf8_lossy(&d_pass.stderr));
+    let d_fail = Command::new(moid_bin())
+        .args(["validate-publisher", b2_path.to_str().unwrap(), "--dns-txt-file", dns_bad.to_str().unwrap()])
+        .output().unwrap();
+    assert!(!d_fail.status.success() && String::from_utf8_lossy(&d_fail.stderr).contains("NET-06"));
 }

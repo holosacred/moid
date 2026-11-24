@@ -1,6 +1,6 @@
 {
-  "$schema": "https://moid.info/schemas/v0.3.0-rc6/publisher.schema.json",
-  "spec_version": "0.3.0-rc6",
+  "$schema": "https://moid.info/schemas/v0.3.0-rc7/publisher.schema.json",
+  "spec_version": "0.3.0-rc7",
   "serial": 1,
   "namespace": "research-group-alpha.subdomain-exceeding-sixty-three-chars.moid.info",
   "domain": "research-group-alpha.subdomain-exceeding-sixty-three-chars.moid.info",

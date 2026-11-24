@@ -9,13 +9,13 @@ use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 
-const COMMON_SCHEMA_RAW: &str = include_str!("../../schemas/v0.3.0-rc6/common.schema.json");
-const MOID_SCHEMA_RAW: &str = include_str!("../../schemas/v0.3.0-rc6/moid.schema.json");
-const INGESTION_SCHEMA_RAW: &str = include_str!("../../schemas/v0.3.0-rc6/ingestion.schema.json");
-const PUBLISHER_SCHEMA_RAW: &str = include_str!("../../schemas/v0.3.0-rc6/publisher.schema.json");
+const COMMON_SCHEMA_RAW: &str = include_str!("../../schemas/v0.3.0-rc7/common.schema.json");
+const MOID_SCHEMA_RAW: &str = include_str!("../../schemas/v0.3.0-rc7/moid.schema.json");
+const INGESTION_SCHEMA_RAW: &str = include_str!("../../schemas/v0.3.0-rc7/ingestion.schema.json");
+const PUBLISHER_SCHEMA_RAW: &str = include_str!("../../schemas/v0.3.0-rc7/publisher.schema.json");
 const TEMPLATE_RAW: &str = include_str!("../../template.moid.yaml");
 
-const COMMON_ID: &str = "https://moid.info/schemas/v0.3.0-rc6/common.schema.json";
+const COMMON_ID: &str = "https://moid.info/schemas/v0.3.0-rc7/common.schema.json";
 const DISCLOSURE_SECTIONS: [&str; 6] = [
     "modulus", "domain_focus", "parameters", "lineage", "licensing", "data_provenance",
 ];
@@ -77,6 +77,8 @@ enum Commands {
         #[arg(long)]
         backlink_file: Option<PathBuf>,
         #[arg(long)]
+        dns_txt_file: Option<PathBuf>,
+        #[arg(long)]
         schema_only: bool,
     },
     Inspect {
@@ -99,7 +101,7 @@ fn main() -> Result<()> {
         Commands::Validate { manifest, verify_files, verify_catalog, strict, schema_only } => {
             cmd_validate(&manifest, verify_files, verify_catalog, strict, schema_only)
         }
-        Commands::ValidatePublisher { binding, serial_state, backlink_file, schema_only } => cmd_validate_publisher(&binding, serial_state.as_deref(), backlink_file.as_deref(), schema_only),
+        Commands::ValidatePublisher { binding, serial_state, backlink_file, dns_txt_file, schema_only } => cmd_validate_publisher(&binding, serial_state.as_deref(), backlink_file.as_deref(), dns_txt_file.as_deref(), schema_only),
         Commands::Inspect { manifest, verify_files } => cmd_inspect(&manifest, verify_files),
         Commands::Diff { old_manifest, new_manifest } => cmd_diff(&old_manifest, &new_manifest),
     }
@@ -322,7 +324,7 @@ fn parse_rfc3339_epoch(s: &str) -> Result<i64> {
     Ok(days * 86400 + hh * 3600 + mm * 60 + ss - offset_sec)
 }
 
-fn cmd_validate_publisher(binding: &Path, serial_state: Option<&Path>, backlink_file: Option<&Path>, schema_only: bool) -> Result<()> {
+fn cmd_validate_publisher(binding: &Path, serial_state: Option<&Path>, backlink_file: Option<&Path>, dns_txt_file: Option<&Path>, schema_only: bool) -> Result<()> {
     let validator = build_validator(PUBLISHER_SCHEMA_RAW)?;
     let val: Value = serde_json::from_str(&fs::read_to_string(binding)?)?;
     let errs: Vec<String> = validator.iter_errors(&val).map(|e| format!("path={} msg={}", e.instance_path(), e)).collect();
@@ -352,6 +354,9 @@ fn cmd_validate_publisher(binding: &Path, serial_state: Option<&Path>, backlink_
     if mode == "platform_bidirectional" {
         let plat = val.pointer("/namespace_claim/platform").and_then(|v| v.as_str()).unwrap_or("");
         let acct = val.pointer("/namespace_claim/platform_account").and_then(|v| v.as_str()).unwrap_or("").to_ascii_lowercase();
+        if acct != ns.to_ascii_lowercase() {
+            bail!("FAIL [PUB-01]: platform_account '{}' must match namespace '{}' (case-insensitive)", acct, ns);
+        }
         let uri = val.pointer("/namespace_claim/platform_proof_uri").and_then(|v| v.as_str()).unwrap_or("").to_ascii_lowercase();
         let prefix = match plat {
             "github" => "https://github.com/",
@@ -386,7 +391,22 @@ fn cmd_validate_publisher(binding: &Path, serial_state: Option<&Path>, backlink_
             }
         }
     }
+    if let Some(anchor) = val.get("dns_txt_anchor").and_then(|v| v.as_str()) {
+        let expected_anchor = format!("_moid.{}", dom.to_ascii_lowercase());
+        if anchor.to_ascii_lowercase() != expected_anchor {
+            bail!("FAIL [PUB-01]: dns_txt_anchor '{}' must equal '{}'", anchor, expected_anchor);
+        }
+    }
     let jcs = sha256_bytes(&canonical_json_bytes(&val));
+    if let Some(txt_path) = dns_txt_file {
+        let txt = fs::read_to_string(txt_path)?;
+        let expected_kv = format!("jcs={}", jcs);
+        let matched = txt.lines().any(|l| l.contains("v=moid1;") && l.contains(&expected_kv));
+        if !matched {
+            bail!("FAIL [NET-06]: DNS TXT record at '{}' does not anchor 'v=moid1; {}'", txt_path.display(), expected_kv);
+        }
+        println!("OK [NET-06]: DNS TXT anchor verified ({}).", expected_kv);
+    }
     let serial = val["serial"].as_u64().unwrap_or(0);
     if let Some(state_path) = serial_state {
         let mut state: Map<String, Value> = if state_path.exists() {

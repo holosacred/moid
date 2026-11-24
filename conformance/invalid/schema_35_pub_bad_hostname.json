@@ -1,6 +1,6 @@
 {
-  "$schema": "https://moid.info/schemas/v0.3.0-rc6/publisher.schema.json",
-  "spec_version": "0.3.0-rc6",
+  "$schema": "https://moid.info/schemas/v0.3.0-rc7/publisher.schema.json",
+  "spec_version": "0.3.0-rc7",
   "serial": 1,
   "namespace": "holosacred",
   "domain": "not a.domain!",
@@ -9,7 +9,7 @@
     "mode": "platform_bidirectional",
     "platform": "github",
     "platform_account": "holosacred",
-    "platform_proof_uri": "https://github.com/holosacred"
+    "platform_proof_uri": "https://github.com/holosacred/moid/blob/main/README.md"
   },
   "updated_at": "2026-11-24T12:00:00Z",
   "expires_at": "2027-05-24T12:00:00Z",

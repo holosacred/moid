@@ -35,6 +35,7 @@ for (const [file, schema] of [
   ["06_hierarchical_ingestion.jsonl", "ingestion"],
   ["07_release_signed_all_undisclosed.moid.yaml", "moid"],
   ["08_publisher_binding_long_domain.json", "publisher"],
+  ["10_publisher_binding_mixed_case_hf.json", "publisher"],
 ]) addValid(file, schema);
 
 let f, p;
@@ -137,6 +138,32 @@ addSchemaNeg("schema_35_pub_bad_hostname.json", "publisher", "/domain", "format"
 p = pub(); p.domain = "localhost"; writeJson("schema_36_pub_no_dot_hostname.json", p);
 addSchemaNeg("schema_36_pub_no_dot_hostname.json", "publisher", "/domain", "pattern");
 
+
+// 37–42: rc7 proof-URI deny-list, dotted namespace rule, dns_txt_anchor format, undisclosed x-* ban
+p = pub(); p.namespace = "deepseek-ai"; p.namespace_claim = { mode: "platform_bidirectional", platform: "huggingface", platform_account: "deepseek-ai", platform_proof_uri: "https://huggingface.co/deepseek-ai/DeepSeek-R1/discussions/99" };
+writeJson("schema_37_pub_proof_hf_discussion.json", p);
+addSchemaNeg("schema_37_pub_proof_hf_discussion.json", "publisher", "/namespace_claim/platform_proof_uri", "not");
+
+p = pub(); p.namespace = "deepseek-ai"; p.namespace_claim = { mode: "platform_bidirectional", platform: "github", platform_account: "deepseek-ai", platform_proof_uri: "https://github.com/deepseek-ai/DeepSeek-V3/issues/1#issuecomment-1" };
+writeJson("schema_38_pub_proof_gh_issue_comment.json", p);
+addSchemaNeg("schema_38_pub_proof_gh_issue_comment.json", "publisher", "/namespace_claim/platform_proof_uri", "not");
+
+p = pub(); p.namespace_claim.platform_proof_uri = "https://github.com/holosacred/moid/blob/refs%2Fpr%2F7/README.md";
+writeJson("schema_39_pub_proof_pr_ref.json", p);
+addSchemaNeg("schema_39_pub_proof_pr_ref.json", "publisher", "/namespace_claim/platform_proof_uri", "not");
+
+p = pub(); p.namespace = "openai.com";
+writeJson("schema_40_pub_dotted_ns_platform_mode.json", p);
+addSchemaNeg("schema_40_pub_dotted_ns_platform_mode.json", "publisher", "/namespace_claim/mode", "const");
+
+p = pub(); p.dns_txt_anchor = "not-a-valid-anchor";
+writeJson("schema_41_pub_bad_dns_txt_anchor.json", p);
+addSchemaNeg("schema_41_pub_bad_dns_txt_anchor.json", "publisher", "/dns_txt_anchor", "pattern");
+
+f = ex3(); f.modulus = { disclosure_status: "unknown", "x-family": "transformer" };
+writeYaml("schema_42_modulus_unknown_with_x_ext.yaml", f);
+addSchemaNeg("schema_42_modulus_unknown_with_x_ext.yaml", "moid", "/modulus/x-family", "false schema");
+
 // CLI / CAT-01 / PUB-01 / NET-05 negatives (each passes schema, fails exact CLI rule)
 f = ex1(); f.lineage.derivations[1].produces = ["bf16-primary"]; writeYaml("cli_20_duplicate_checkpoint_producer.yaml", f);
 addCliNeg("cli_20_duplicate_checkpoint_producer.yaml", "moid", "FAIL", "cli", "DAG-01", "multiple activities");
@@ -187,7 +214,20 @@ addCliNeg("cli_31_publisher_platform_account_mismatch.json", "publisher", "FAIL"
 p = pub(); p.namespace_claim = { mode: "domain_exact" }; writeJson("cli_32_publisher_domain_exact_mismatch.json", p);
 addCliNeg("cli_32_publisher_domain_exact_mismatch.json", "publisher", "FAIL", "pub", "PUB-01", "domain_exact");
 
+
+p = pub(); p.namespace = "deepseek-ai"; p.namespace_claim.platform_account = "holosacred";
+writeJson("cli_34_pub_platform_account_ns_mismatch.json", p);
+addCliNeg("cli_34_pub_platform_account_ns_mismatch.json", "publisher", "FAIL", "pub", "PUB-01", "must match namespace");
+
+p = pub(); p.dns_txt_anchor = "_moid.other.example";
+writeJson("cli_35_pub_dns_anchor_domain_mismatch.json", p);
+addCliNeg("cli_35_pub_dns_anchor_domain_mismatch.json", "publisher", "FAIL", "pub", "PUB-01", "must equal");
+
+f = ex1(); f.domain_focus.primary = "biology";
+writeYaml("cli_36_focus_primary_not_in_weights.yaml", f);
+addCliNeg("cli_36_focus_primary_not_in_weights.yaml", "moid", "FAIL", "cli", "FOCUS-01", "not in focus_weights");
+
 fs.writeFileSync("conformance/invalid/cli_33_backlink_missing.html", "<html><body>No domain link here</body></html>\n");
 
 fs.writeFileSync("conformance/manifest.json", JSON.stringify(manifest, null, 2));
-console.log(`Generated ${manifest.length} manifest-tracked fixtures (8 valid, 36 schema negatives, 13 CLI/CAT/PUB negatives) + backlink fixture.`);
+console.log(`Generated ${manifest.length} manifest-tracked fixtures (9 valid, 42 schema negatives, 16 CLI/CAT/PUB negatives) + backlink fixture.`);

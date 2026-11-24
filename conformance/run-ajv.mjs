@@ -12,11 +12,11 @@ addFormats(ajv);
 ajv.addVocabulary(["x-verification"]);
 
 const loadJson = (p) => JSON.parse(fs.readFileSync(p, "utf8"));
-ajv.addSchema(loadJson("schemas/v0.3.0-rc6/common.schema.json"));
+ajv.addSchema(loadJson("schemas/v0.3.0-rc7/common.schema.json"));
 const validators = {
-  moid: ajv.compile(loadJson("schemas/v0.3.0-rc6/moid.schema.json")),
-  publisher: ajv.compile(loadJson("schemas/v0.3.0-rc6/publisher.schema.json")),
-  ingestion: ajv.compile(loadJson("schemas/v0.3.0-rc6/ingestion.schema.json")),
+  moid: ajv.compile(loadJson("schemas/v0.3.0-rc7/moid.schema.json")),
+  publisher: ajv.compile(loadJson("schemas/v0.3.0-rc7/publisher.schema.json")),
+  ingestion: ajv.compile(loadJson("schemas/v0.3.0-rc7/ingestion.schema.json")),
 };
 
 const moidBin = "cli/target/debug/moid";
@@ -58,7 +58,6 @@ for (const c of cases) {
     }
     rows.push(`| ${label} | FAIL (${c.expected_path || "<root>"}:${c.expected_ajv_keyword}) | ${ajvMatched ? "MATCH" : "MISS"} | ${rustMatched ? "MATCH" : "MISS"} | ${ok ? "OK" : "MISMATCH"} |`);
   } else {
-    // Confirm CLI/PUB negatives actually PASS schema first (proves single-defect isolation)
     let schemaPass = true;
     if (c.schema === "moid") schemaPass = validators.moid(YAML.parse(fs.readFileSync(c.file, "utf8"), { schema: "core" }));
     if (c.schema === "publisher") schemaPass = validators.publisher(loadJson(c.file));

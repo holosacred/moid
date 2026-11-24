@@ -1,14 +1,15 @@
 # Changelog
 
-## v0.3.0-rc6 (2026-11-24)
-- **Publisher Trust Model Hardening (`TRUST_MODEL.md`, `publisher.schema.json`, `PUB-01`, `NET-05`):**
-  - Removed publisher-asserted `policy_pinned` mode (pins are strictly verifier-side configuration).
-  - Required `platform` (`github | huggingface | gitlab | codeberg`), `platform_account`, and host-matched `platform_proof_uri` for `platform_bidirectional`; added account-path verification in `PUB-01` and offline-testable `NET-05` back-link verification (`--backlink-file`).
-  - Added 365-day maximum binding lifetime (`expires_at - updated_at <= 365d`) and monotonic `serial` persistence (`--serial-state`) rejecting rollbacks and equivocation.
-  - Specified revocation semantics (trusted log time vs. retroactive invalidation of untimestamped signatures) and `key` identity public-key resolution (`public_key_uri` / `public_key_pem`).
-- **Disclosure Completeness:** Enforced non-empty substantive content via `anyOf` across all 6 `disclosure_status` sections whenever status is `disclosed` or `partial` (mirroring `rc5`'s forbid rule for `undisclosed`/`unknown`).
-- **Slug Alignment:** Extended `namespaceSlug` to RFC 1035/1123 253-char hostnames (63 chars per label) and aligned `moidSlug` identically.
-- **Expected-Error Conformance Suite:** Added `conformance/manifest.json` asserting exact RFC 6901 `instancePath` + Ajv keyword / Rust rule ID on every negative fixture; rebuilt isolated `G06` and `B`-series fixtures on valid `rc6` bases.
+## v0.3.0-rc7 (2026-11-24)
+- **Write-Restricted Platform Proof URIs:** Schema `not` pattern rejects user-writable paths (`/discussions/`, `/issues/`, `/pull/`, `/pulls/`, `/merge_requests/`, `/wiki/`, percent-encoded equivalents, `refs/pr`, and `#` fragments); `NET-05` restricts proofs to org/user profiles or default-branch files on owned repositories.
+- **Binding Authority, Continuity & DNS Anchor (`TRUST_MODEL.md`, `PUB-01`, `NET-06`):**
+  - Specified that Tier 1 requires a live HTTPS fetch from `<domain>/.well-known/moid-publisher.json`, and `binding_signature` provides key continuity across rotations (not domain authority).
+  - Specified `dns_txt_anchor` (`^_moid\.<hostname>$`, `PUB-01` enforces `_moid.<domain>`) and added `NET-06` (`--dns-txt-file`) checking `v=moid1; jcs=<jcs_sha256>`.
+- **Four Pre-Freeze Fixes:**
+  - Dotted namespaces schema-require `namespace_claim.mode == "domain_exact"`.
+  - `PUB-01` enforces case-insensitive `platform_account == namespace` (supporting mixed-case platform orgs such as Hugging Face `Qwen`).
+  - `key_fingerprint` uses the digest algorithm named in its prefix (`sha256:`, `sha512:`, `blake3:`) over SPKI DER bytes.
+  - Forbidden `x-*` extension keys inside `modulus` when `disclosure_status` is `undisclosed` or `unknown`.
 
-## v0.3.0-rc5 (2026-11-22)
-- Full Ajv strict mode (`strict: true, strictRequired: true`), closed `G01`–`G04`, publisher freshness fields, and `PUB-01`.
+## v0.3.0-rc6 (2026-11-24)
+- Removed `policy_pinned`, added 365-day cap and monotonic serials, enforced non-empty `disclosed`/`partial` sections, aligned 253-char domain slugs, and added expected-error `manifest.json`.

@@ -1,0 +1,335 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://moid.info/schemas/v0.3.0-rc7/publisher.schema.json",
+  "title": "MoID Publisher Namespace Binding (.well-known/moid-publisher.json) v0.3.0-rc7",
+  "type": "object",
+  "required": [
+    "spec_version",
+    "serial",
+    "namespace",
+    "domain",
+    "namespace_claim",
+    "updated_at",
+    "expires_at",
+    "allowed_identities"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "format": "uri"
+    },
+    "spec_version": {
+      "const": "0.3.0-rc7"
+    },
+    "serial": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "namespace": {
+      "$ref": "common.schema.json#/$defs/namespaceSlug"
+    },
+    "domain": {
+      "type": "string",
+      "format": "hostname",
+      "minLength": 3,
+      "maxLength": 253,
+      "pattern": "\\."
+    },
+    "display_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "namespace_claim": {
+      "type": "object",
+      "required": [
+        "mode"
+      ],
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "domain_exact",
+            "platform_bidirectional"
+          ]
+        },
+        "platform": {
+          "type": "string",
+          "enum": [
+            "github",
+            "huggingface",
+            "gitlab",
+            "codeberg"
+          ]
+        },
+        "platform_account": {
+          "type": "string",
+          "minLength": 1
+        },
+        "platform_proof_uri": {
+          "type": "string",
+          "format": "uri",
+          "not": {
+            "type": "string",
+            "pattern": "(/(discussions|issues|pull|pulls|merge_requests|wiki)(/|$)|%2[fF](discussions|issues|pull|pulls|merge_requests|wiki)|refs(/|%2[fF])pr|#)"
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "type": "object",
+            "required": [
+              "mode"
+            ],
+            "properties": {
+              "mode": {
+                "const": "domain_exact"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "platform": false,
+              "platform_account": false,
+              "platform_proof_uri": false
+            }
+          }
+        },
+        {
+          "if": {
+            "type": "object",
+            "required": [
+              "mode"
+            ],
+            "properties": {
+              "mode": {
+                "const": "platform_bidirectional"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "required": [
+              "platform",
+              "platform_account",
+              "platform_proof_uri"
+            ],
+            "properties": {
+              "platform": true,
+              "platform_account": true,
+              "platform_proof_uri": true
+            }
+          }
+        },
+        {
+          "if": {
+            "type": "object",
+            "required": [
+              "platform"
+            ],
+            "properties": {
+              "platform": {
+                "const": "github"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "platform_proof_uri": {
+                "type": "string",
+                "pattern": "^https://github\\.com/"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "type": "object",
+            "required": [
+              "platform"
+            ],
+            "properties": {
+              "platform": {
+                "const": "huggingface"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "platform_proof_uri": {
+                "type": "string",
+                "pattern": "^https://huggingface\\.co/"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "type": "object",
+            "required": [
+              "platform"
+            ],
+            "properties": {
+              "platform": {
+                "const": "gitlab"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "platform_proof_uri": {
+                "type": "string",
+                "pattern": "^https://gitlab\\.com/"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "type": "object",
+            "required": [
+              "platform"
+            ],
+            "properties": {
+              "platform": {
+                "const": "codeberg"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "platform_proof_uri": {
+                "type": "string",
+                "pattern": "^https://codeberg\\.org/"
+              }
+            }
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "dns_txt_anchor": {
+      "type": "string",
+      "maxLength": 259,
+      "pattern": "^_moid\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$"
+    },
+    "repositories": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "format": "uri"
+      },
+      "uniqueItems": true
+    },
+    "allowed_identities": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "common.schema.json#/$defs/identity"
+      }
+    },
+    "revoked_identities": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "identity",
+          "revoked_at"
+        ],
+        "properties": {
+          "identity": {
+            "$ref": "common.schema.json#/$defs/identity"
+          },
+          "revoked_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "key_compromise",
+              "superseded",
+              "cessation_of_operation",
+              "affiliation_changed",
+              "unspecified"
+            ]
+          }
+        },
+        "unevaluatedProperties": false
+      }
+    },
+    "binding_signature": {
+      "type": "object",
+      "required": [
+        "format",
+        "path"
+      ],
+      "properties": {
+        "format": {
+          "type": "string",
+          "enum": [
+            "pgp-detached-v1",
+            "ssh-sig-v1",
+            "minisign-v1",
+            "dsse-in-toto-v1",
+            "sigstore-bundle-v0.3"
+          ]
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "unevaluatedProperties": false
+    }
+  },
+  "unevaluatedProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "type": "object",
+        "required": [
+          "namespace"
+        ],
+        "properties": {
+          "namespace": {
+            "type": "string",
+            "pattern": "\\."
+          }
+        }
+      },
+      "then": {
+        "type": "object",
+        "required": [
+          "namespace_claim"
+        ],
+        "properties": {
+          "namespace_claim": {
+            "type": "object",
+            "required": [
+              "mode"
+            ],
+            "properties": {
+              "mode": {
+                "const": "domain_exact"
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

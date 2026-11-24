@@ -48,6 +48,12 @@
     "layer": "both"
   },
   {
+    "file": "conformance/valid/10_publisher_binding_mixed_case_hf.json",
+    "schema": "publisher",
+    "expect": "PASS",
+    "layer": "both"
+  },
+  {
     "file": "conformance/invalid/schema_01_release_placeholder_digest.yaml",
     "schema": "moid",
     "expect": "FAIL",
@@ -336,6 +342,54 @@
     "expected_ajv_keyword": "pattern"
   },
   {
+    "file": "conformance/invalid/schema_37_pub_proof_hf_discussion.json",
+    "schema": "publisher",
+    "expect": "FAIL",
+    "layer": "schema",
+    "expected_path": "/namespace_claim/platform_proof_uri",
+    "expected_ajv_keyword": "not"
+  },
+  {
+    "file": "conformance/invalid/schema_38_pub_proof_gh_issue_comment.json",
+    "schema": "publisher",
+    "expect": "FAIL",
+    "layer": "schema",
+    "expected_path": "/namespace_claim/platform_proof_uri",
+    "expected_ajv_keyword": "not"
+  },
+  {
+    "file": "conformance/invalid/schema_39_pub_proof_pr_ref.json",
+    "schema": "publisher",
+    "expect": "FAIL",
+    "layer": "schema",
+    "expected_path": "/namespace_claim/platform_proof_uri",
+    "expected_ajv_keyword": "not"
+  },
+  {
+    "file": "conformance/invalid/schema_40_pub_dotted_ns_platform_mode.json",
+    "schema": "publisher",
+    "expect": "FAIL",
+    "layer": "schema",
+    "expected_path": "/namespace_claim/mode",
+    "expected_ajv_keyword": "const"
+  },
+  {
+    "file": "conformance/invalid/schema_41_pub_bad_dns_txt_anchor.json",
+    "schema": "publisher",
+    "expect": "FAIL",
+    "layer": "schema",
+    "expected_path": "/dns_txt_anchor",
+    "expected_ajv_keyword": "pattern"
+  },
+  {
+    "file": "conformance/invalid/schema_42_modulus_unknown_with_x_ext.yaml",
+    "schema": "moid",
+    "expect": "FAIL",
+    "layer": "schema",
+    "expected_path": "/modulus/x-family",
+    "expected_ajv_keyword": "false schema"
+  },
+  {
     "file": "conformance/invalid/cli_20_duplicate_checkpoint_producer.yaml",
     "schema": "moid",
     "expect": "FAIL",
@@ -438,5 +492,29 @@
     "layer": "pub",
     "expected_rule": "PUB-01",
     "expected_msg": "domain_exact"
+  },
+  {
+    "file": "conformance/invalid/cli_34_pub_platform_account_ns_mismatch.json",
+    "schema": "publisher",
+    "expect": "FAIL",
+    "layer": "pub",
+    "expected_rule": "PUB-01",
+    "expected_msg": "must match namespace"
+  },
+  {
+    "file": "conformance/invalid/cli_35_pub_dns_anchor_domain_mismatch.json",
+    "schema": "publisher",
+    "expect": "FAIL",
+    "layer": "pub",
+    "expected_rule": "PUB-01",
+    "expected_msg": "must equal"
+  },
+  {
+    "file": "conformance/invalid/cli_36_focus_primary_not_in_weights.yaml",
+    "schema": "moid",
+    "expect": "FAIL",
+    "layer": "cli",
+    "expected_rule": "FOCUS-01",
+    "expected_msg": "not in focus_weights"
   }
 ]
