@@ -1,0 +1,13 @@
+{
+  "$schema": "https://moid.info/schemas/v0.3.0-rc6/publisher.schema.json",
+  "spec_version": "0.3.0-rc6",
+  "serial": 1,
+  "namespace": "research-group-alpha.subdomain-exceeding-sixty-three-chars.moid.info",
+  "domain": "research-group-alpha.subdomain-exceeding-sixty-three-chars.moid.info",
+  "namespace_claim": { "mode": "domain_exact" },
+  "updated_at": "2026-11-24T12:00:00Z",
+  "expires_at": "2027-05-24T12:00:00Z",
+  "allowed_identities": [
+    { "kind": "key", "key_fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "public_key_uri": "https://moid.info/keys/release.pub.pem" }
+  ]
+}

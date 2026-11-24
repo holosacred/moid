@@ -9,13 +9,13 @@ use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 
-const COMMON_SCHEMA_RAW: &str = include_str!("../../schemas/v0.3.0-rc5/common.schema.json");
-const MOID_SCHEMA_RAW: &str = include_str!("../../schemas/v0.3.0-rc5/moid.schema.json");
-const INGESTION_SCHEMA_RAW: &str = include_str!("../../schemas/v0.3.0-rc5/ingestion.schema.json");
-const PUBLISHER_SCHEMA_RAW: &str = include_str!("../../schemas/v0.3.0-rc5/publisher.schema.json");
+const COMMON_SCHEMA_RAW: &str = include_str!("../../schemas/v0.3.0-rc6/common.schema.json");
+const MOID_SCHEMA_RAW: &str = include_str!("../../schemas/v0.3.0-rc6/moid.schema.json");
+const INGESTION_SCHEMA_RAW: &str = include_str!("../../schemas/v0.3.0-rc6/ingestion.schema.json");
+const PUBLISHER_SCHEMA_RAW: &str = include_str!("../../schemas/v0.3.0-rc6/publisher.schema.json");
 const TEMPLATE_RAW: &str = include_str!("../../template.moid.yaml");
 
-const COMMON_ID: &str = "https://moid.info/schemas/v0.3.0-rc5/common.schema.json";
+const COMMON_ID: &str = "https://moid.info/schemas/v0.3.0-rc6/common.schema.json";
 const DISCLOSURE_SECTIONS: [&str; 6] = [
     "modulus", "domain_focus", "parameters", "lineage", "licensing", "data_provenance",
 ];
@@ -72,6 +72,12 @@ enum Commands {
     ValidatePublisher {
         #[arg(default_value = "moid-publisher.json")]
         binding: PathBuf,
+        #[arg(long)]
+        serial_state: Option<PathBuf>,
+        #[arg(long)]
+        backlink_file: Option<PathBuf>,
+        #[arg(long)]
+        schema_only: bool,
     },
     Inspect {
         #[arg(default_value = "moid.yaml")]
@@ -93,7 +99,7 @@ fn main() -> Result<()> {
         Commands::Validate { manifest, verify_files, verify_catalog, strict, schema_only } => {
             cmd_validate(&manifest, verify_files, verify_catalog, strict, schema_only)
         }
-        Commands::ValidatePublisher { binding } => cmd_validate_publisher(&binding),
+        Commands::ValidatePublisher { binding, serial_state, backlink_file, schema_only } => cmd_validate_publisher(&binding, serial_state.as_deref(), backlink_file.as_deref(), schema_only),
         Commands::Inspect { manifest, verify_files } => cmd_inspect(&manifest, verify_files),
         Commands::Diff { old_manifest, new_manifest } => cmd_diff(&old_manifest, &new_manifest),
     }
@@ -229,7 +235,7 @@ fn validate_catalog_file(catalog_path: &Path, non_draft: bool) -> Result<(String
         if t.is_empty() { continue; }
         let rec: Value = serde_json::from_str(t)
             .with_context(|| format!("CAT-01: Invalid JSON on line {}", idx + 1))?;
-        let errs: Vec<String> = validator.iter_errors(&rec).map(|e| format!("[{}] {}", e.instance_path(), e)).collect();
+        let errs: Vec<String> = validator.iter_errors(&rec).map(|e| format!("path={} msg={}", e.instance_path(), e)).collect();
         if !errs.is_empty() {
             bail!("CAT-01: Schema error on line {}:\n  - {}", idx + 1, errs.join("\n  - "));
         }
@@ -280,23 +286,95 @@ fn cmd_seal(catalog: &Path, non_draft: bool) -> Result<()> {
     Ok(())
 }
 
-fn cmd_validate_publisher(binding: &Path) -> Result<()> {
+fn parse_rfc3339_epoch(s: &str) -> Result<i64> {
+    let b = s.as_bytes();
+    if b.len() < 20 || b[4] != b'-' || b[7] != b'-' || (b[10] != b'T' && b[10] != b't') || b[13] != b':' || b[16] != b':' {
+        bail!("Invalid RFC 3339 timestamp '{}'", s);
+    }
+    let y: i64 = s[0..4].parse()?;
+    let m: i64 = s[5..7].parse()?;
+    let d: i64 = s[8..10].parse()?;
+    let hh: i64 = s[11..13].parse()?;
+    let mm: i64 = s[14..16].parse()?;
+    let ss: i64 = s[17..19].parse()?;
+    let mut idx = 19;
+    if idx < b.len() && b[idx] == b'.' {
+        idx += 1;
+        while idx < b.len() && b[idx].is_ascii_digit() { idx += 1; }
+    }
+    let offset_sec: i64 = if idx < b.len() && (b[idx] == b'Z' || b[idx] == b'z') {
+        0
+    } else if idx + 6 == b.len() && (b[idx] == b'+' || b[idx] == b'-') && b[idx + 3] == b':' {
+        let sign = if b[idx] == b'+' { 1 } else { -1 };
+        let oh: i64 = s[idx + 1..idx + 3].parse()?;
+        let om: i64 = s[idx + 4..idx + 6].parse()?;
+        sign * (oh * 3600 + om * 60)
+    } else {
+        bail!("Invalid RFC 3339 timezone in '{}'", s);
+    };
+    let y_adj = if m <= 2 { y - 1 } else { y };
+    let era = if y_adj >= 0 { y_adj } else { y_adj - 399 } / 400;
+    let yoe = y_adj - era * 400;
+    let mp = if m > 2 { m - 3 } else { m + 9 };
+    let doy = (153 * mp + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146097 + doe - 719468;
+    Ok(days * 86400 + hh * 3600 + mm * 60 + ss - offset_sec)
+}
+
+fn cmd_validate_publisher(binding: &Path, serial_state: Option<&Path>, backlink_file: Option<&Path>, schema_only: bool) -> Result<()> {
     let validator = build_validator(PUBLISHER_SCHEMA_RAW)?;
     let val: Value = serde_json::from_str(&fs::read_to_string(binding)?)?;
-    let errs: Vec<String> = validator.iter_errors(&val).map(|e| format!("[{}] {}", e.instance_path(), e)).collect();
+    let errs: Vec<String> = validator.iter_errors(&val).map(|e| format!("path={} msg={}", e.instance_path(), e)).collect();
     if !errs.is_empty() {
-        bail!("FAIL: {} failed publisher.schema.json:\n  - {}", binding.display(), errs.join("\n  - "));
+        bail!("FAIL [SCHEMA-01]: {} failed publisher.schema.json:\n  - {}", binding.display(), errs.join("\n  - "));
     }
-    let updated = val["updated_at"].as_str().unwrap_or("");
-    let expires = val["expires_at"].as_str().unwrap_or("");
-    if expires <= updated {
-        bail!("FAIL [PUB-01]: expires_at ({}) must be strictly after updated_at ({})", expires, updated);
+    if schema_only {
+        println!("OK [SCHEMA-01]: {} passed publisher.schema.json.", binding.display());
+        return Ok(());
     }
-    if val.pointer("/namespace_claim/mode").and_then(|v| v.as_str()) == Some("domain_exact") {
-        let ns = val["namespace"].as_str().unwrap_or("");
-        let dom = val["domain"].as_str().unwrap_or("");
-        if ns != dom {
-            bail!("FAIL [PUB-01]: domain_exact claim requires namespace '{}' == domain '{}'", ns, dom);
+    let updated_s = val["updated_at"].as_str().unwrap_or("");
+    let expires_s = val["expires_at"].as_str().unwrap_or("");
+    let updated_ts = parse_rfc3339_epoch(updated_s)?;
+    let expires_ts = parse_rfc3339_epoch(expires_s)?;
+    if expires_ts <= updated_ts {
+        bail!("FAIL [PUB-01]: expires_at ({}) must be strictly after updated_at ({})", expires_s, updated_s);
+    }
+    if expires_ts - updated_ts > 365 * 86400 {
+        bail!("FAIL [PUB-01]: binding lifetime exceeds maximum 365 days ({} -> {})", updated_s, expires_s);
+    }
+    let ns = val["namespace"].as_str().unwrap_or("");
+    let dom = val["domain"].as_str().unwrap_or("");
+    let mode = val.pointer("/namespace_claim/mode").and_then(|v| v.as_str()).unwrap_or("");
+    if mode == "domain_exact" && ns != dom {
+        bail!("FAIL [PUB-01]: domain_exact claim requires namespace '{}' == domain '{}'", ns, dom);
+    }
+    if mode == "platform_bidirectional" {
+        let plat = val.pointer("/namespace_claim/platform").and_then(|v| v.as_str()).unwrap_or("");
+        let acct = val.pointer("/namespace_claim/platform_account").and_then(|v| v.as_str()).unwrap_or("").to_ascii_lowercase();
+        let uri = val.pointer("/namespace_claim/platform_proof_uri").and_then(|v| v.as_str()).unwrap_or("").to_ascii_lowercase();
+        let prefix = match plat {
+            "github" => "https://github.com/",
+            "huggingface" => "https://huggingface.co/",
+            "gitlab" => "https://gitlab.com/",
+            "codeberg" => "https://codeberg.org/",
+            _ => bail!("FAIL [PUB-01]: unsupported platform '{}'", plat),
+        };
+        let rest = uri.strip_prefix(prefix).unwrap_or("");
+        let ok_acct = rest == acct
+            || rest.starts_with(&format!("{}/", acct))
+            || (plat == "github" && (rest == format!("orgs/{}", acct) || rest.starts_with(&format!("orgs/{}/", acct))));
+        if !ok_acct {
+            bail!("FAIL [PUB-01]: platform_proof_uri '{}' does not match platform_account '{}'", uri, acct);
+        }
+        if let Some(bf) = backlink_file {
+            let body = fs::read_to_string(bf)?.to_ascii_lowercase();
+            let needle_well_known = format!("https://{}/.well-known/moid-publisher.json", dom.to_ascii_lowercase());
+            let needle_root = format!("https://{}", dom.to_ascii_lowercase());
+            if !body.contains(&needle_well_known) && !body.contains(&needle_root) {
+                bail!("FAIL [NET-05]: platform profile at '{}' lacks back-link to '{}'", uri, needle_root);
+            }
+            println!("OK [NET-05]: platform back-link to '{}' verified.", dom);
         }
     }
     let allowed: HashSet<Vec<u8>> = val["allowed_identities"]
@@ -308,7 +386,31 @@ fn cmd_validate_publisher(binding: &Path) -> Result<()> {
             }
         }
     }
-    println!("OK [PUB-01]: {} passed publisher.schema.json (jcs={}).", binding.display(), sha256_bytes(&canonical_json_bytes(&val)));
+    let jcs = sha256_bytes(&canonical_json_bytes(&val));
+    let serial = val["serial"].as_u64().unwrap_or(0);
+    if let Some(state_path) = serial_state {
+        let mut state: Map<String, Value> = if state_path.exists() {
+            serde_json::from_str(&fs::read_to_string(state_path)?)?
+        } else {
+            Map::new()
+        };
+        if let Some(prev) = state.get(ns) {
+            let prev_serial = prev["serial"].as_u64().unwrap_or(0);
+            let prev_jcs = prev["jcs_digest"].as_str().unwrap_or("");
+            if serial < prev_serial {
+                bail!("FAIL [PUB-01]: serial rollback for '{}' (got {}, highest seen {})", ns, serial, prev_serial);
+            }
+            if serial == prev_serial && jcs != prev_jcs {
+                bail!("FAIL [PUB-01]: serial equivocation for '{}' (serial {} seen with different digest)", ns, serial);
+            }
+        }
+        let mut entry = Map::new();
+        entry.insert("serial".into(), Value::from(serial));
+        entry.insert("jcs_digest".into(), Value::from(jcs.clone()));
+        state.insert(ns.to_string(), Value::Object(entry));
+        fs::write(state_path, serde_json::to_string_pretty(&Value::Object(state))?)?;
+    }
+    println!("OK [PUB-01]: {} passed publisher.schema.json (serial={}, jcs={}).", binding.display(), serial, jcs);
     Ok(())
 }
 
@@ -324,7 +426,7 @@ fn collect_digests(v: &Value, out: &mut Vec<String>) {
 fn cmd_validate(manifest_path: &Path, verify_files: bool, verify_catalog: bool, strict: bool, schema_only: bool) -> Result<()> {
     let v = parse_yaml_12(manifest_path)?;
     let validator = build_validator(MOID_SCHEMA_RAW)?;
-    let errs: Vec<String> = validator.iter_errors(&v).map(|e| format!("[{}] {}", e.instance_path(), e)).collect();
+    let errs: Vec<String> = validator.iter_errors(&v).map(|e| format!("path={} msg={}", e.instance_path(), e)).collect();
     if !errs.is_empty() {
         bail!("FAIL [SCHEMA-01]: {}:\n  - {}", manifest_path.display(), errs.join("\n  - "));
     }

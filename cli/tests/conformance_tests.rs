@@ -1,73 +1,93 @@
+use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use tempfile::tempdir;
 
 fn moid_bin() -> &'static str { env!("CARGO_BIN_EXE_moid") }
 fn root() -> PathBuf { Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().to_path_buf() }
 
 #[test]
-fn test_all_valid_conformance_fixtures() {
-    let dir = root().join("conformance/valid");
-    let mut entries: Vec<_> = fs::read_dir(&dir).unwrap().map(|e| e.unwrap().path()).collect();
-    entries.sort();
-    for p in entries {
-        let name = p.file_name().unwrap().to_str().unwrap();
-        let out = if name.ends_with(".yaml") {
-            Command::new(moid_bin()).args(["validate", p.to_str().unwrap()]).output().unwrap()
-        } else if name.ends_with(".json") {
-            Command::new(moid_bin()).args(["validate-publisher", p.to_str().unwrap()]).output().unwrap()
-        } else if name.ends_with(".jsonl") {
-            Command::new(moid_bin()).args(["seal", p.to_str().unwrap(), "--non-draft"]).output().unwrap()
-        } else { continue; };
-        assert!(out.status.success(), "Expected PASS for valid/{}: {}", name, String::from_utf8_lossy(&out.stderr));
-    }
-}
+fn test_manifest_expected_error_assertions() {
+    let manifest_raw = fs::read_to_string(root().join("conformance/manifest.json")).unwrap();
+    let cases: Vec<Value> = serde_json::from_str(&manifest_raw).unwrap();
+    for c in cases {
+        let file = root().join(c["file"].as_str().unwrap());
+        let expect = c["expect"].as_str().unwrap();
+        let layer = c["layer"].as_str().unwrap();
+        let schema = c["schema"].as_str().unwrap();
 
-#[test]
-fn test_all_schema_invalid_fixtures_fail_schema_only() {
-    let dir = root().join("conformance/invalid");
-    let mut entries: Vec<_> = fs::read_dir(&dir).unwrap().map(|e| e.unwrap().path()).collect();
-    entries.sort();
-    for p in entries {
-        let name = p.file_name().unwrap().to_str().unwrap();
-        if !name.starts_with("schema_") { continue; }
-        let out = if name.ends_with(".json") {
-            Command::new(moid_bin()).args(["validate-publisher", p.to_str().unwrap()]).output().unwrap()
+        if expect == "PASS" {
+            let args = match schema {
+                "publisher" => vec!["validate-publisher", file.to_str().unwrap()],
+                "ingestion" => vec!["seal", file.to_str().unwrap(), "--non-draft"],
+                _ => vec!["validate", file.to_str().unwrap()],
+            };
+            let out = Command::new(moid_bin()).args(&args).output().unwrap();
+            assert!(out.status.success(), "Expected PASS for {:?}: {}", file, String::from_utf8_lossy(&out.stderr));
+        } else if layer == "schema" {
+            let exp_path = c["expected_path"].as_str().unwrap();
+            let args = if schema == "publisher" {
+                vec!["validate-publisher", "--schema-only", file.to_str().unwrap()]
+            } else {
+                vec!["validate", "--schema-only", file.to_str().unwrap()]
+            };
+            let out = Command::new(moid_bin()).args(&args).output().unwrap();
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            assert!(!out.status.success(), "Expected SCHEMA FAIL for {:?}", file);
+            assert!(stderr.contains(&format!("path={} ", exp_path)), "Wrong error path for {:?}: expected 'path={} ', got:\n{}", file, exp_path, stderr);
         } else {
-            Command::new(moid_bin()).args(["validate", "--schema-only", p.to_str().unwrap()]).output().unwrap()
-        };
-        assert!(!out.status.success(), "Expected SCHEMA FAIL for invalid/{}, but it PASSED", name);
+            let rule = c["expected_rule"].as_str().unwrap();
+            let msg = c["expected_msg"].as_str().unwrap();
+            let args = match layer {
+                "cat" => vec!["seal", file.to_str().unwrap(), "--non-draft"],
+                "pub" => vec!["validate-publisher", file.to_str().unwrap()],
+                _ => vec!["validate", file.to_str().unwrap()],
+            };
+            let out = Command::new(moid_bin()).args(&args).output().unwrap();
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            if expect == "WARN" { assert!(out.status.success()); } else { assert!(!out.status.success()); }
+            assert!(stderr.contains(rule) && stderr.contains(msg), "Wrong CLI error for {:?}: expected {} + {}, got:\n{}", file, rule, msg, stderr);
+        }
     }
 }
 
 #[test]
-fn test_cli_semantic_catalog_and_publisher_negatives() {
-    let inv = root().join("conformance/invalid");
-    for f in [
-        "cli_20_duplicate_checkpoint_producer.yaml",
-        "cli_21_contrib_share_exceeds_one.yaml",
-        "cli_26_moid_namespace_mismatch.yaml",
-        "cli_27_dangling_local_and_produces.yaml",
-    ] {
-        let out = Command::new(moid_bin()).args(["validate", inv.join(f).to_str().unwrap()]).output().unwrap();
-        assert!(!out.status.success(), "Expected CLI FAIL for {}", f);
-    }
-    for f in [
-        "cli_22_mixed_level_unlinked.jsonl",
-        "cli_23_nonleaf_digest.jsonl",
-        "cli_24_nondraft_leaf_no_digest.jsonl",
-    ] {
-        let out = Command::new(moid_bin()).args(["seal", inv.join(f).to_str().unwrap(), "--non-draft"]).output().unwrap();
-        assert!(!out.status.success(), "Expected CAT-01 FAIL for {}", f);
-    }
-    for f in [
-        "cli_28_publisher_allowed_and_revoked.json",
-        "cli_29_publisher_expired_before_updated.json",
-    ] {
-        let out = Command::new(moid_bin()).args(["validate-publisher", inv.join(f).to_str().unwrap()]).output().unwrap();
-        assert!(!out.status.success(), "Expected PUB-01 FAIL for {}", f);
-    }
-    let adv = Command::new(moid_bin()).args(["validate", inv.join("cli_25_osaid_advisory_non_osi_code.yaml").to_str().unwrap()]).output().unwrap();
-    assert!(adv.status.success(), "Advisory OPEN-01 should warn, not hard-fail");
-    assert!(String::from_utf8_lossy(&adv.stderr).contains("ADVISORY [OPEN-01]"));
+fn test_publisher_serial_rollback_equivocation_and_net05_backlink() {
+    let dir = tempdir().unwrap();
+    let state = dir.path().join("serials.json");
+    let pub_valid = root().join("conformance/valid/05_publisher_binding_gpg.json");
+    let backlink_ok = root().join("conformance/valid/09_backlink_profile_valid.html");
+    let backlink_bad = root().join("conformance/invalid/cli_33_backlink_missing.html");
+
+    // 1. Valid NET-05 back-link + serial 2 saved to state
+    let mut b2: Value = serde_json::from_str(&fs::read_to_string(&pub_valid).unwrap()).unwrap();
+    b2["serial"] = Value::from(2);
+    let b2_path = dir.path().join("b2.json");
+    fs::write(&b2_path, serde_json::to_string_pretty(&b2).unwrap()).unwrap();
+    let ok = Command::new(moid_bin())
+        .args(["validate-publisher", b2_path.to_str().unwrap(), "--serial-state", state.to_str().unwrap(), "--backlink-file", backlink_ok.to_str().unwrap()])
+        .output().unwrap();
+    assert!(ok.status.success(), "Expected PASS with valid backlink & serial 2: {}", String::from_utf8_lossy(&ok.stderr));
+
+    // 2. Missing NET-05 back-link fails
+    let bad_bl = Command::new(moid_bin())
+        .args(["validate-publisher", b2_path.to_str().unwrap(), "--backlink-file", backlink_bad.to_str().unwrap()])
+        .output().unwrap();
+    assert!(!bad_bl.status.success() && String::from_utf8_lossy(&bad_bl.stderr).contains("NET-05"));
+
+    // 3. Serial rollback (serial 1 < 2) fails PUB-01
+    let rollback = Command::new(moid_bin())
+        .args(["validate-publisher", pub_valid.to_str().unwrap(), "--serial-state", state.to_str().unwrap()])
+        .output().unwrap();
+    assert!(!rollback.status.success() && String::from_utf8_lossy(&rollback.stderr).contains("serial rollback"));
+
+    // 4. Same-serial equivocation (serial 2 with modified display_name) fails PUB-01
+    b2["display_name"] = Value::from("Equivocated Name");
+    let b2_eq = dir.path().join("b2_eq.json");
+    fs::write(&b2_eq, serde_json::to_string_pretty(&b2).unwrap()).unwrap();
+    let eq = Command::new(moid_bin())
+        .args(["validate-publisher", b2_eq.to_str().unwrap(), "--serial-state", state.to_str().unwrap()])
+        .output().unwrap();
+    assert!(!eq.status.success() && String::from_utf8_lossy(&eq.stderr).contains("serial equivocation"));
 }

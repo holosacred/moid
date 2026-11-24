@@ -1,0 +1,46 @@
+{
+  "$schema": "https://moid.info/schemas/v0.3.0-rc6/publisher.schema.json",
+  "spec_version": "0.3.0-rc6",
+  "serial": 1,
+  "namespace": "holosacred",
+  "domain": "localhost",
+  "display_name": "Holosacred Research",
+  "namespace_claim": {
+    "mode": "platform_bidirectional",
+    "platform": "github",
+    "platform_account": "holosacred",
+    "platform_proof_uri": "https://github.com/holosacred"
+  },
+  "updated_at": "2026-11-24T12:00:00Z",
+  "expires_at": "2027-05-24T12:00:00Z",
+  "dns_txt_anchor": "_moid.moid.info",
+  "repositories": [
+    "https://github.com/holosacred/moid"
+  ],
+  "allowed_identities": [
+    {
+      "kind": "pgp",
+      "fingerprint": "0123456789ABCDEF0123456789ABCDEF01234567",
+      "keyserver_uri": "https://keys.openpgp.org"
+    },
+    {
+      "kind": "oidc",
+      "oidc_issuer": "https://token.actions.githubusercontent.com",
+      "subject": "https://github.com/holosacred/moid/.github/workflows/release-cli.yml@refs/tags/v0.3.0"
+    }
+  ],
+  "revoked_identities": [
+    {
+      "identity": {
+        "kind": "pgp",
+        "fingerprint": "FEDCBA9876543210FEDCBA9876543210FEDCBA98"
+      },
+      "revoked_at": "2026-11-01T00:00:00Z",
+      "reason": "superseded"
+    }
+  ],
+  "binding_signature": {
+    "format": "pgp-detached-v1",
+    "path": "./moid-publisher.json.asc"
+  }
+}

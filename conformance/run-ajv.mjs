@@ -1,5 +1,4 @@
 import fs from "node:fs";
-import path from "node:path";
 import { spawnSync } from "node:child_process";
 import _Ajv2020 from "ajv/dist/2020.js";
 import _addFormats from "ajv-formats";
@@ -8,72 +7,77 @@ import YAML from "yaml";
 const Ajv2020 = _Ajv2020.default ?? _Ajv2020;
 const addFormats = _addFormats.default ?? _addFormats;
 
-// FULL Ajv strict mode: ZERO flags relaxed
 const ajv = new Ajv2020({ strict: true, strictRequired: true, allErrors: true });
 addFormats(ajv);
 ajv.addVocabulary(["x-verification"]);
 
 const loadJson = (p) => JSON.parse(fs.readFileSync(p, "utf8"));
-ajv.addSchema(loadJson("schemas/v0.3.0-rc5/common.schema.json"));
-const validateMoid = ajv.compile(loadJson("schemas/v0.3.0-rc5/moid.schema.json"));
-const validatePub = ajv.compile(loadJson("schemas/v0.3.0-rc5/publisher.schema.json"));
-const validateIng = ajv.compile(loadJson("schemas/v0.3.0-rc5/ingestion.schema.json"));
+ajv.addSchema(loadJson("schemas/v0.3.0-rc6/common.schema.json"));
+const validators = {
+  moid: ajv.compile(loadJson("schemas/v0.3.0-rc6/moid.schema.json")),
+  publisher: ajv.compile(loadJson("schemas/v0.3.0-rc6/publisher.schema.json")),
+  ingestion: ajv.compile(loadJson("schemas/v0.3.0-rc6/ingestion.schema.json")),
+};
 
 const moidBin = "cli/target/debug/moid";
 const runRust = (args) => spawnSync(moidBin, args, { encoding: "utf8" });
 
+const cases = loadJson("conformance/manifest.json");
 let failures = 0;
 const rows = [];
-const record = (label, exp, ajvRes, rustRes, ok) => {
-  if (!ok) failures++;
-  rows.push(`| ${label} | ${exp} | ${ajvRes} | ${rustRes} | ${ok ? "OK" : "MISMATCH"} |`);
-};
 
-for (const file of fs.readdirSync("conformance/valid").sort()) {
-  const full = path.join("conformance/valid", file);
-  if (file.endsWith(".yaml")) {
-    const ajvOk = validateMoid(YAML.parse(fs.readFileSync(full, "utf8"), { schema: "core" }));
-    const rustOk = runRust(["validate", full]).status === 0;
-    record(`valid/${file}`, "PASS", ajvOk ? "PASS" : "FAIL", rustOk ? "PASS" : "FAIL", ajvOk && rustOk);
-  } else if (file.endsWith(".json")) {
-    const ajvOk = validatePub(loadJson(full));
-    const rustOk = runRust(["validate-publisher", full]).status === 0;
-    record(`valid/${file}`, "PASS", ajvOk ? "PASS" : "FAIL", rustOk ? "PASS" : "FAIL", ajvOk && rustOk);
-  } else if (file.endsWith(".jsonl")) {
-    const ajvOk = fs.readFileSync(full, "utf8").trim().split("\n").every((l) => validateIng(JSON.parse(l)));
-    const rustOk = runRust(["seal", full, "--non-draft"]).status === 0;
-    record(`valid/${file}`, "PASS", ajvOk ? "PASS" : "FAIL", rustOk ? "PASS" : "FAIL", ajvOk && rustOk);
-  }
-}
-
-for (const file of fs.readdirSync("conformance/invalid").sort()) {
-  const full = path.join("conformance/invalid", file);
-  if (file.startsWith("schema_") && file.endsWith(".yaml")) {
-    const ajvOk = validateMoid(YAML.parse(fs.readFileSync(full, "utf8"), { schema: "core" }));
-    const rustOk = runRust(["validate", "--schema-only", full]).status === 0;
-    record(`invalid/${file}`, "FAIL", ajvOk ? "PASS" : "FAIL", rustOk ? "PASS" : "FAIL", !ajvOk && !rustOk);
-  } else if (file.startsWith("schema_") && file.endsWith(".json")) {
-    const ajvOk = validatePub(loadJson(full));
-    const rustOk = runRust(["validate-publisher", full]).status === 0;
-    record(`invalid/${file}`, "FAIL", ajvOk ? "PASS" : "FAIL", rustOk ? "PASS" : "FAIL", !ajvOk && !rustOk);
-  } else if (file === "cli_25_osaid_advisory_non_osi_code.yaml") {
-    const res = runRust(["validate", full]);
-    const warned = res.status === 0 && res.stderr.includes("ADVISORY [OPEN-01]");
-    record(`invalid/${file}`, "WARN", "N/A (CLI)", warned ? "WARN" : "FAIL", warned);
-  } else if (file.endsWith(".yaml")) {
-    const rustOk = runRust(["validate", full]).status === 0;
-    record(`invalid/${file}`, "FAIL", "N/A (CLI)", rustOk ? "PASS" : "FAIL", !rustOk);
-  } else if (file.endsWith(".jsonl")) {
-    const rustOk = runRust(["seal", full, "--non-draft"]).status === 0;
-    record(`invalid/${file}`, "FAIL", "N/A (CAT-01)", rustOk ? "PASS" : "FAIL", !rustOk);
-  } else if (file.endsWith(".json")) {
-    const rustOk = runRust(["validate-publisher", full]).status === 0;
-    record(`invalid/${file}`, "FAIL", "N/A (PUB-01)", rustOk ? "PASS" : "FAIL", !rustOk);
+for (const c of cases) {
+  const label = c.file.replace("conformance/", "");
+  if (c.expect === "PASS") {
+    let ajvOk = false, rustRes;
+    if (c.schema === "moid") {
+      ajvOk = validators.moid(YAML.parse(fs.readFileSync(c.file, "utf8"), { schema: "core" }));
+      rustRes = runRust(["validate", c.file]);
+    } else if (c.schema === "publisher") {
+      ajvOk = validators.publisher(loadJson(c.file));
+      rustRes = runRust(["validate-publisher", c.file]);
+    } else {
+      ajvOk = fs.readFileSync(c.file, "utf8").trim().split("\n").every((l) => validators.ingestion(JSON.parse(l)));
+      rustRes = runRust(["seal", c.file, "--non-draft"]);
+    }
+    const ok = ajvOk && rustRes.status === 0;
+    if (!ok) failures++;
+    rows.push(`| ${label} | PASS | ${ajvOk ? "PASS" : "FAIL"} | ${rustRes.status === 0 ? "PASS" : "FAIL"} | ${ok ? "OK" : "MISMATCH"} |`);
+  } else if (c.layer === "schema") {
+    const data = c.file.endsWith(".json") ? loadJson(c.file) : YAML.parse(fs.readFileSync(c.file, "utf8"), { schema: "core" });
+    const v = validators[c.schema];
+    const ajvOk = v(data);
+    const ajvMatched = !ajvOk && (v.errors || []).some((e) => e.instancePath === c.expected_path && e.keyword === c.expected_ajv_keyword);
+    const rustArgs = c.schema === "publisher" ? ["validate-publisher", "--schema-only", c.file] : ["validate", "--schema-only", c.file];
+    const rustRes = runRust(rustArgs);
+    const rustMatched = rustRes.status !== 0 && rustRes.stderr.includes(`path=${c.expected_path} `);
+    const ok = ajvMatched && rustMatched;
+    if (!ok) {
+      failures++;
+      console.error(`DETAIL MISMATCH ${label}: expected path=${c.expected_path} kw=${c.expected_ajv_keyword}\n  ajv=${JSON.stringify((v.errors || []).map((e) => [e.instancePath, e.keyword]))}\n  rust=${rustRes.stderr.trim()}`);
+    }
+    rows.push(`| ${label} | FAIL (${c.expected_path || "<root>"}:${c.expected_ajv_keyword}) | ${ajvMatched ? "MATCH" : "MISS"} | ${rustMatched ? "MATCH" : "MISS"} | ${ok ? "OK" : "MISMATCH"} |`);
+  } else {
+    // Confirm CLI/PUB negatives actually PASS schema first (proves single-defect isolation)
+    let schemaPass = true;
+    if (c.schema === "moid") schemaPass = validators.moid(YAML.parse(fs.readFileSync(c.file, "utf8"), { schema: "core" }));
+    if (c.schema === "publisher") schemaPass = validators.publisher(loadJson(c.file));
+    const rustArgs = c.layer === "cat" ? ["seal", c.file, "--non-draft"] : c.layer === "pub" ? ["validate-publisher", c.file] : ["validate", c.file];
+    const rustRes = runRust(rustArgs);
+    const statusOk = c.expect === "WARN" ? rustRes.status === 0 : rustRes.status !== 0;
+    const msgOk = rustRes.stderr.includes(c.expected_rule) && rustRes.stderr.includes(c.expected_msg);
+    const ok = schemaPass && statusOk && msgOk;
+    if (!ok) {
+      failures++;
+      console.error(`CLI MISMATCH ${label}: schemaPass=${schemaPass} status=${rustRes.status} stderr=${rustRes.stderr.trim()}`);
+    }
+    rows.push(`| ${label} | ${c.expect} (${c.expected_rule}) | ${schemaPass ? "SCHEMA PASS" : "SCHEMA FAIL"} | ${msgOk ? c.expect + " MATCH" : "MISS"} | ${ok ? "OK" : "MISMATCH"} |`);
   }
 }
 
 console.log("Ajv 2020-12 compiled OK with { strict: true, strictRequired: true }");
-console.log("| Fixture | Expected | Ajv 2020-12 (strict+strictRequired) | Rust jsonschema 0.61 | Parity |");
-console.log("| :--- | :---: | :---: | :---: | :--- |");
+console.log("| Fixture | Expected Assertion | Ajv 2020-12 | Rust jsonschema 0.61 | Status |");
+console.log("| :--- | :--- | :---: | :---: | :--- |");
 console.log(rows.join("\n"));
+console.log(`\nTotal: ${cases.length - failures}/${cases.length} assertions matched.`);
 if (failures > 0) process.exit(1);

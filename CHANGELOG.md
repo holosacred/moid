@@ -1,16 +1,14 @@
 # Changelog
 
-## v0.3.0-rc5 (2026-11-22)
-- **Full Ajv Strict Compliance:** Added explicit `type` and `required` property stubs across all Draft 2020-12 subschemas so `common`, `moid`, `ingestion`, and `publisher` compile with `strict: true` and `strictRequired: true` enabled (zero relaxed flags).
-- **Closed Schema Loopholes (G01–G04):**
-  - `weight_initialization: "from_model"` now requires at least one external `externalTargetRef` parent (local-only quantize rejected).
-  - Enforced attestation format $\leftrightarrow$ `asserted_by.identity.kind` matrix and added `minisign-v1` format.
-  - Non-draft `third_party_description` manifests require `manifest_assertion.evidence` (`minItems: 1`).
-  - `disclosure_status: "undisclosed" | "unknown"` now forbids substantive section data fields (only `disclosure_status` and `evidence` allowed).
-- **Hardened Publisher Binding (`publisher.schema.json` + `PUB-01`):**
-  - Added required `serial`, `expires_at`, `namespace_claim` (`domain_exact | platform_bidirectional | policy_pinned`), hostname validation on `domain`, and structured `revoked_identities[].revoked_at`.
-  - Allowed domain-exact namespaces (e.g., `moid.info/model`) in `namespaceSlug` and `moidSlug`.
-  - Added CLI rule `PUB-01` rejecting `expires_at <= updated_at`, allowed/revoked identity overlap, and `domain_exact` namespace mismatches.
+## v0.3.0-rc6 (2026-11-24)
+- **Publisher Trust Model Hardening (`TRUST_MODEL.md`, `publisher.schema.json`, `PUB-01`, `NET-05`):**
+  - Removed publisher-asserted `policy_pinned` mode (pins are strictly verifier-side configuration).
+  - Required `platform` (`github | huggingface | gitlab | codeberg`), `platform_account`, and host-matched `platform_proof_uri` for `platform_bidirectional`; added account-path verification in `PUB-01` and offline-testable `NET-05` back-link verification (`--backlink-file`).
+  - Added 365-day maximum binding lifetime (`expires_at - updated_at <= 365d`) and monotonic `serial` persistence (`--serial-state`) rejecting rollbacks and equivocation.
+  - Specified revocation semantics (trusted log time vs. retroactive invalidation of untimestamped signatures) and `key` identity public-key resolution (`public_key_uri` / `public_key_pem`).
+- **Disclosure Completeness:** Enforced non-empty substantive content via `anyOf` across all 6 `disclosure_status` sections whenever status is `disclosed` or `partial` (mirroring `rc5`'s forbid rule for `undisclosed`/`unknown`).
+- **Slug Alignment:** Extended `namespaceSlug` to RFC 1035/1123 253-char hostnames (63 chars per label) and aligned `moidSlug` identically.
+- **Expected-Error Conformance Suite:** Added `conformance/manifest.json` asserting exact RFC 6901 `instancePath` + Ajv keyword / Rust rule ID on every negative fixture; rebuilt isolated `G06` and `B`-series fixtures on valid `rc6` bases.
 
-## v0.3.0-rc4 (2026-11-22)
-- Upgraded to Draft 2020-12, `moid.info` `$id` URIs, structured `modulus`, PROV-inspired N-ary `derivations[]`, `x-verification` `{ verifier, assurance }`, prefixed `code_commit`/`revision`/`digest`, and dual Rust + Ajv conformance testing.
+## v0.3.0-rc5 (2026-11-22)
+- Full Ajv strict mode (`strict: true, strictRequired: true`), closed `G01`–`G04`, publisher freshness fields, and `PUB-01`.

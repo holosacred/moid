@@ -1,0 +1,442 @@
+[
+  {
+    "file": "conformance/valid/01_first_party_hybrid_policy.moid.yaml",
+    "schema": "moid",
+    "expect": "PASS",
+    "layer": "both"
+  },
+  {
+    "file": "conformance/valid/02_third_party_deepseek_distill.moid.yaml",
+    "schema": "moid",
+    "expect": "PASS",
+    "layer": "both"
+  },
+  {
+    "file": "conformance/valid/03_closed_api_orchestrator.moid.yaml",
+    "schema": "moid",
+    "expect": "PASS",
+    "layer": "both"
+  },
+  {
+    "file": "conformance/valid/04_third_party_community_gguf.moid.yaml",
+    "schema": "moid",
+    "expect": "PASS",
+    "layer": "both"
+  },
+  {
+    "file": "conformance/valid/05_publisher_binding_gpg.json",
+    "schema": "publisher",
+    "expect": "PASS",
+    "layer": "both"
+  },
+  {
+    "file": "conformance/valid/06_hierarchical_ingestion.jsonl",
+    "schema": "ingestion",
+    "expect": "PASS",
+    "layer": "both"
+  },
+  {
+    "file": "conformance/valid/07_release_signed_all_undisclosed.moid.yaml",
+    "schema": "moid",
+    "expect": "PASS",
+    "layer": "both"
+  },
+  {
+    "file": "conformance/valid/08_publisher_binding_long_domain.json",
+    "schema": "publisher",
+    "expect": "PASS",
+    "layer": "both"
+  },
+  {
+    "file": "conformance/invalid/schema_01_release_placeholder_digest.yaml",
+    "schema": "moid",
+    "expect": "FAIL",
+    "layer": "schema",
+    "expected_path": "/checkpoints/0/files/0/digest",
+    "expected_ajv_keyword": "pattern"
+  },
+  {
+    "file": "conformance/invalid/schema_02_deprecated_placeholder_digest.yaml",
+    "schema": "moid",
+    "expect": "FAIL",
+    "layer": "schema",
+    "expected_path": "/checkpoints/0/files/0/digest",
+    "expected_ajv_keyword": "pattern"
+  },
+  {
+    "file": "conformance/invalid/schema_03_release_placeholder_revision.yaml",
+    "schema": "moid",
+    "expect": "FAIL",
+    "layer": "schema",
+    "expected_path": "/lineage/derivations/0/inputs/0/target_ref/revision",
+    "expected_ajv_keyword": "pattern"
+  },
+  {
+    "file": "conformance/invalid/schema_04_junk_revision_string.yaml",
+    "schema": "moid",
+    "expect": "FAIL",
+    "layer": "schema",
+    "expected_path": "/lineage/derivations/0/inputs/0/target_ref/revision",
+    "expected_ajv_keyword": "oneOf"
+  },
+  {
+    "file": "conformance/invalid/schema_05_release_open_weights_no_digest.yaml",
+    "schema": "moid",
+    "expect": "FAIL",
+    "layer": "schema",
+    "expected_path": "/checkpoints/0/files/0",
+    "expected_ajv_keyword": "required"
+  },
+  {
+    "file": "conformance/invalid/schema_06_draft_with_attestation.yaml",
+    "schema": "moid",
+    "expect": "FAIL",
+    "layer": "schema",
+    "expected_path": "/manifest_status",
+    "expected_ajv_keyword": "not"
+  },
+  {
+    "file": "conformance/invalid/schema_07_distill_online_without_teacher.yaml",
+    "schema": "moid",
+    "expect": "FAIL",
+    "layer": "schema",
+    "expected_path": "/lineage/derivations/0/inputs",
+    "expected_ajv_keyword": "contains"
+  },
+  {
+    "file": "conformance/invalid/schema_08_distill_sequence_sft_with_teacher.yaml",
+    "schema": "moid",
+    "expect": "FAIL",
+    "layer": "schema",
+    "expected_path": "/lineage/derivations/0/inputs/3/role",
+    "expected_ajv_keyword": "enum"
+  },
+  {
+    "file": "conformance/invalid/schema_09_quantize_calibration_only.yaml",
+    "schema": "moid",
+    "expect": "FAIL",
+    "layer": "schema",
+    "expected_path": "/lineage/derivations/0/inputs",
+    "expected_ajv_keyword": "contains"
+  },
+  {
+    "file": "conformance/invalid/schema_10_quantize_missing_spec.yaml",
+    "schema": "moid",
+    "expect": "FAIL",
+    "layer": "schema",
+    "expected_path": "/lineage/derivations/0",
+    "expected_ajv_keyword": "required"
+  },
+  {
+    "file": "conformance/invalid/schema_11_fine_tune_without_base.yaml",
+    "schema": "moid",
+    "expect": "FAIL",
+    "layer": "schema",
+    "expected_path": "/lineage/derivations/0/inputs",
+    "expected_ajv_keyword": "contains"
+  },
+  {
+    "file": "conformance/invalid/schema_12_fine_tune_with_quant_spec.yaml",
+    "schema": "moid",
+    "expect": "FAIL",
+    "layer": "schema",
+    "expected_path": "/lineage/derivations/0/quantization_spec",
+    "expected_ajv_keyword": "false schema"
+  },
+  {
+    "file": "conformance/invalid/schema_13_from_model_no_parent_weights.yaml",
+    "schema": "moid",
+    "expect": "FAIL",
+    "layer": "schema",
+    "expected_path": "/lineage/derivations",
+    "expected_ajv_keyword": "contains"
+  },
+  {
+    "file": "conformance/invalid/schema_14_random_init_external_base.yaml",
+    "schema": "moid",
+    "expect": "FAIL",
+    "layer": "schema",
+    "expected_path": "/lineage/derivations/0/inputs/2/target_ref",
+    "expected_ajv_keyword": "required"
+  },
+  {
+    "file": "conformance/invalid/schema_15_produces_endpoint_no_endpoint.yaml",
+    "schema": "moid",
+    "expect": "FAIL",
+    "layer": "schema",
+    "expected_path": "",
+    "expected_ajv_keyword": "required"
+  },
+  {
+    "file": "conformance/invalid/schema_16_third_party_self_declared.yaml",
+    "schema": "moid",
+    "expect": "FAIL",
+    "layer": "schema",
+    "expected_path": "/openness/self_declared_alignment",
+    "expected_ajv_keyword": "false schema"
+  },
+  {
+    "file": "conformance/invalid/schema_17_repro_full_unknown_data.yaml",
+    "schema": "moid",
+    "expect": "FAIL",
+    "layer": "schema",
+    "expected_path": "/openness/training_data",
+    "expected_ajv_keyword": "enum"
+  },
+  {
+    "file": "conformance/invalid/schema_18_malformed_released_at.yaml",
+    "schema": "moid",
+    "expect": "FAIL",
+    "layer": "schema",
+    "expected_path": "/released_at",
+    "expected_ajv_keyword": "format"
+  },
+  {
+    "file": "conformance/invalid/schema_19_yaml11_unquoted_yes.yaml",
+    "schema": "moid",
+    "expect": "FAIL",
+    "layer": "schema",
+    "expected_path": "/stack_spec/deterministic",
+    "expected_ajv_keyword": "type"
+  },
+  {
+    "file": "conformance/invalid/schema_20_G01_from_model_local_only.yaml",
+    "schema": "moid",
+    "expect": "FAIL",
+    "layer": "schema",
+    "expected_path": "/lineage/derivations",
+    "expected_ajv_keyword": "contains"
+  },
+  {
+    "file": "conformance/invalid/schema_21_G02_attestation_identity_mismatch.yaml",
+    "schema": "moid",
+    "expect": "FAIL",
+    "layer": "schema",
+    "expected_path": "/manifest_assertion/asserted_by/identity/kind",
+    "expected_ajv_keyword": "const"
+  },
+  {
+    "file": "conformance/invalid/schema_22_G03_undisclosed_with_value.yaml",
+    "schema": "moid",
+    "expect": "FAIL",
+    "layer": "schema",
+    "expected_path": "/parameters/total",
+    "expected_ajv_keyword": "false schema"
+  },
+  {
+    "file": "conformance/invalid/schema_23_G04_nondraft_third_party_no_evidence.yaml",
+    "schema": "moid",
+    "expect": "FAIL",
+    "layer": "schema",
+    "expected_path": "/manifest_assertion",
+    "expected_ajv_keyword": "required"
+  },
+  {
+    "file": "conformance/invalid/schema_24_empty_disclosed_licensing.yaml",
+    "schema": "moid",
+    "expect": "FAIL",
+    "layer": "schema",
+    "expected_path": "/licensing",
+    "expected_ajv_keyword": "anyOf"
+  },
+  {
+    "file": "conformance/invalid/schema_25_empty_disclosed_data_provenance.yaml",
+    "schema": "moid",
+    "expect": "FAIL",
+    "layer": "schema",
+    "expected_path": "/data_provenance",
+    "expected_ajv_keyword": "anyOf"
+  },
+  {
+    "file": "conformance/invalid/schema_26_empty_partial_modulus.yaml",
+    "schema": "moid",
+    "expect": "FAIL",
+    "layer": "schema",
+    "expected_path": "/modulus",
+    "expected_ajv_keyword": "anyOf"
+  },
+  {
+    "file": "conformance/invalid/schema_27_empty_partial_domain_focus.yaml",
+    "schema": "moid",
+    "expect": "FAIL",
+    "layer": "schema",
+    "expected_path": "/domain_focus",
+    "expected_ajv_keyword": "anyOf"
+  },
+  {
+    "file": "conformance/invalid/schema_28_empty_partial_parameters.yaml",
+    "schema": "moid",
+    "expect": "FAIL",
+    "layer": "schema",
+    "expected_path": "/parameters",
+    "expected_ajv_keyword": "anyOf"
+  },
+  {
+    "file": "conformance/invalid/schema_29_empty_partial_lineage.yaml",
+    "schema": "moid",
+    "expect": "FAIL",
+    "layer": "schema",
+    "expected_path": "/lineage",
+    "expected_ajv_keyword": "anyOf"
+  },
+  {
+    "file": "conformance/invalid/schema_30_empty_partial_licensing.yaml",
+    "schema": "moid",
+    "expect": "FAIL",
+    "layer": "schema",
+    "expected_path": "/licensing",
+    "expected_ajv_keyword": "anyOf"
+  },
+  {
+    "file": "conformance/invalid/schema_31_empty_partial_data_provenance.yaml",
+    "schema": "moid",
+    "expect": "FAIL",
+    "layer": "schema",
+    "expected_path": "/data_provenance",
+    "expected_ajv_keyword": "anyOf"
+  },
+  {
+    "file": "conformance/invalid/schema_32_pub_policy_pinned_removed.json",
+    "schema": "publisher",
+    "expect": "FAIL",
+    "layer": "schema",
+    "expected_path": "/namespace_claim/mode",
+    "expected_ajv_keyword": "enum"
+  },
+  {
+    "file": "conformance/invalid/schema_33_pub_platform_evil_host.json",
+    "schema": "publisher",
+    "expect": "FAIL",
+    "layer": "schema",
+    "expected_path": "/namespace_claim/platform_proof_uri",
+    "expected_ajv_keyword": "pattern"
+  },
+  {
+    "file": "conformance/invalid/schema_34_pub_revoked_missing_revoked_at.json",
+    "schema": "publisher",
+    "expect": "FAIL",
+    "layer": "schema",
+    "expected_path": "/revoked_identities/0",
+    "expected_ajv_keyword": "required"
+  },
+  {
+    "file": "conformance/invalid/schema_35_pub_bad_hostname.json",
+    "schema": "publisher",
+    "expect": "FAIL",
+    "layer": "schema",
+    "expected_path": "/domain",
+    "expected_ajv_keyword": "format"
+  },
+  {
+    "file": "conformance/invalid/schema_36_pub_no_dot_hostname.json",
+    "schema": "publisher",
+    "expect": "FAIL",
+    "layer": "schema",
+    "expected_path": "/domain",
+    "expected_ajv_keyword": "pattern"
+  },
+  {
+    "file": "conformance/invalid/cli_20_duplicate_checkpoint_producer.yaml",
+    "schema": "moid",
+    "expect": "FAIL",
+    "layer": "cli",
+    "expected_rule": "DAG-01",
+    "expected_msg": "multiple activities"
+  },
+  {
+    "file": "conformance/invalid/cli_21_contrib_share_exceeds_one.yaml",
+    "schema": "moid",
+    "expect": "FAIL",
+    "layer": "cli",
+    "expected_rule": "CONTRIB-01",
+    "expected_msg": "sample_share sum"
+  },
+  {
+    "file": "conformance/invalid/cli_22_mixed_level_unlinked.jsonl",
+    "schema": "ingestion",
+    "expect": "FAIL",
+    "layer": "cat",
+    "expected_rule": "CAT-01",
+    "expected_msg": "Unlinked mixed record_levels"
+  },
+  {
+    "file": "conformance/invalid/cli_23_nonleaf_digest.jsonl",
+    "schema": "ingestion",
+    "expect": "FAIL",
+    "layer": "cat",
+    "expected_rule": "CAT-01",
+    "expected_msg": "Non-leaf parent record"
+  },
+  {
+    "file": "conformance/invalid/cli_24_nondraft_leaf_no_digest.jsonl",
+    "schema": "ingestion",
+    "expect": "FAIL",
+    "layer": "cat",
+    "expected_rule": "CAT-01",
+    "expected_msg": "requires digest"
+  },
+  {
+    "file": "conformance/invalid/cli_25_osaid_advisory_non_osi_code.yaml",
+    "schema": "moid",
+    "expect": "WARN",
+    "layer": "cli",
+    "expected_rule": "ADVISORY [OPEN-01]",
+    "expected_msg": "not in advisory allowlist"
+  },
+  {
+    "file": "conformance/invalid/cli_26_G05_moid_namespace_mismatch.yaml",
+    "schema": "moid",
+    "expect": "FAIL",
+    "layer": "cli",
+    "expected_rule": "ID-01",
+    "expected_msg": "publisher.namespace"
+  },
+  {
+    "file": "conformance/invalid/cli_27_G06_isolated_dangling_ids.yaml",
+    "schema": "moid",
+    "expect": "FAIL",
+    "layer": "cli",
+    "expected_rule": "DAG-01",
+    "expected_msg": "unknown checkpoint"
+  },
+  {
+    "file": "conformance/invalid/cli_28_B5_publisher_allowed_and_revoked.json",
+    "schema": "publisher",
+    "expect": "FAIL",
+    "layer": "pub",
+    "expected_rule": "PUB-01",
+    "expected_msg": "both allowed_identities and revoked_identities"
+  },
+  {
+    "file": "conformance/invalid/cli_29_publisher_expired_before_updated.json",
+    "schema": "publisher",
+    "expect": "FAIL",
+    "layer": "pub",
+    "expected_rule": "PUB-01",
+    "expected_msg": "must be strictly after"
+  },
+  {
+    "file": "conformance/invalid/cli_30_publisher_lifetime_exceeds_365d.json",
+    "schema": "publisher",
+    "expect": "FAIL",
+    "layer": "pub",
+    "expected_rule": "PUB-01",
+    "expected_msg": "exceeds maximum 365 days"
+  },
+  {
+    "file": "conformance/invalid/cli_31_publisher_platform_account_mismatch.json",
+    "schema": "publisher",
+    "expect": "FAIL",
+    "layer": "pub",
+    "expected_rule": "PUB-01",
+    "expected_msg": "does not match platform_account"
+  },
+  {
+    "file": "conformance/invalid/cli_32_publisher_domain_exact_mismatch.json",
+    "schema": "publisher",
+    "expect": "FAIL",
+    "layer": "pub",
+    "expected_rule": "PUB-01",
+    "expected_msg": "domain_exact"
+  }
+]
