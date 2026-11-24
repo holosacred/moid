@@ -12,11 +12,11 @@ addFormats(ajv);
 ajv.addVocabulary(["x-verification"]);
 
 const loadJson = (p) => JSON.parse(fs.readFileSync(p, "utf8"));
-ajv.addSchema(loadJson("schemas/v0.3.0-rc8/common.schema.json"));
+ajv.addSchema(loadJson("schemas/v0.3.0/common.schema.json"));
 const validators = {
-  moid: ajv.compile(loadJson("schemas/v0.3.0-rc8/moid.schema.json")),
-  publisher: ajv.compile(loadJson("schemas/v0.3.0-rc8/publisher.schema.json")),
-  ingestion: ajv.compile(loadJson("schemas/v0.3.0-rc8/ingestion.schema.json")),
+  moid: ajv.compile(loadJson("schemas/v0.3.0/moid.schema.json")),
+  publisher: ajv.compile(loadJson("schemas/v0.3.0/publisher.schema.json")),
+  ingestion: ajv.compile(loadJson("schemas/v0.3.0/ingestion.schema.json")),
 };
 
 const moidBin = "cli/target/debug/moid";

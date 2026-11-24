@@ -1,60 +1,53 @@
-# MoID: Modulus IDentifier Standard
+# MoID — Modulus IDentifier Standard (`v0.3.0`)
 
-**An identification system for artificial intelligence models and broader AI-related software.**
+MoID is a repo-root YAML manifest standard (`*.moid.yaml`), Draft 2020-12 JSON Schema suite, and Rust CLI (`moid-cli`) for AI model architecture, runtime stack topology, PROV-inspired derivation provenance, and cryptographic publisher verification.
 
-MoID (`moid`) provides a deterministic, machine-readable manifest (`moid.yaml`) that classifies AI software across three orthogonal axes—computational mechanism (`modulus`), functional stack position (`stack_role`), and domain ontology (`domain_focus`)—paired with cryptographic checkpoint and training-data provenance.
+## Official Schemas (`v0.3.0`)
 
----
+Hosted at https://moid.info:
 
-## Core Taxonomy
+* **Manifest:** `https://moid.info/schemas/v0.3.0/moid.schema.json`
+* **Shared Vocabulary:** `https://moid.info/schemas/v0.3.0/common.schema.json`
+* **Ingestion Catalog:** `https://moid.info/schemas/v0.3.0/ingestion.schema.json`
+* **Publisher Binding:** `https://moid.info/schemas/v0.3.0/publisher.schema.json`
 
-* **Mechanism (`modulus`):** `transformer`, `transformation_model`, `state_space`, `graph_network`, `neural_operator`, or `hybrid`.
-* **Stack Role (`stack_role`):** `generator`, `decision_policy`, `router`, `planner`, `verifier`, `critic_reward`, `world_model`, `perception_encoder`, `memory_indexer`, `orchestrator`, or `hybrid` (with optional `stack_spec` upstream/downstream graph links).
-* **Domain Focus (`domain_focus`):** Open-ended capability weights (`language`, `math`, `physics`, `code`, `robotics`, `vision`, etc.).
-* **Licensing & Access Separation:** Pairs 3-tier licensing (`copycenter`, `copyleft`, `copyright` + SPDX) with explicit availability flags (`open_weights`, `open_code`, `open_data`, `reproducibility`).
-* **Tamper-Evident Provenance:** Links `moid.yaml` to an external `ingestion_manifest.jsonl` validated against `ingestion.schema.json` and sealed with a SHA-256 digest.
+All four schemas compile under Ajv 2020-12 strict mode (`{ strict: true, strictRequired: true }`) with **76/76** dual-validator expected-error parity against Rust `jsonschema 0.61.2`.
 
----
+## Design Highlights
 
-## CLI Installation & Usage
+* **3-Axis Classification:** Separates model architecture (`modulus`), runtime stack topology (`stack_roles` / `stack_spec`), and input/output `modalities` + `domain_focus`.
+* **PROV-Inspired N-ary Lineage:** Models `fine_tune`, `distill`, `merge`, `quantize`, `adapter`, `continued_pretrain`, `prune`, and `rl_post_train` activities with strict role constraints and content-addressed digests (`sha256:`, `sha512:`, `blake3:`).
+* **Bidirectional Disclosure Semantics:** Across all 6 disclosure-tracked sections (`modulus`, `domain_focus`, `parameters`, `lineage`, `licensing`, `data_provenance`), `disclosed` and `partial` require substantive content, while `undisclosed` and `unknown` forbid substantive data and `x-*` extensions.
+* **Hardened Publisher Trust Model:** Tier-1 live HTTPS authority, RFC 8785 JCS canonical signing (`pgp-detached-v1`, `minisign-v1`, `ssh-sig-v1`, `dsse-in-toto-v1`, `sigstore-bundle-v0.3`), key-continuity rotation checks (`CONTINUITY_BREAK`), monotonic serial memory, write-restricted `NET-05` platform proofs, and `NET-06` `_moid.<domain>` DNS TXT anchors. See `TRUST_MODEL.md`.
 
-Install `moid` directly from GitHub:
-
-~~~bash
-cargo install --git https://github.com/holosacred/moid --path cli
-~~~
-
-Common commands:
+## CLI Quickstart (`moid-cli 0.3.0`)
 
 ~~~bash
-# Scaffold a manifest for a specific architecture and stack role
-moid init --modulus state_space --stack-role decision_policy --id org/policy-v1
+cargo install --path cli
 
-# Hash checkpoint shards in parallel and write directly into moid.yaml
-moid hash weights/*.safetensors --write moid.yaml
+# Validate a model manifest (Draft 2020-12 schema + DAG/contribution/identity rules)
+moid validate examples/01_first_party_hybrid_policy.moid.yaml
 
-# Generate checkpoints from an existing Hugging Face / Zenodo SHA256SUMS file
-moid hash --from-sha256sums SHA256SUMS --write moid.yaml
+# Inspect disclosure telemetry across all 6 tracked sections
+moid inspect examples/01_first_party_hybrid_policy.moid.yaml
 
-# Validate and seal ingestion_manifest.jsonl directly into moid.yaml
-moid seal ingestion_manifest.jsonl --write moid.yaml
+# Seal and verify a hierarchical JSONL ingestion catalog (CAT-01)
+moid seal conformance/valid/06_hierarchical_ingestion.jsonl --non-draft
 
-# Validate schema, JSONL catalog, and local checkpoint hashes
-moid validate moid.yaml --verify-weights
+# Emit exact RFC 8785 JCS canonical bytes for detached signing (GPG / Minisign)
+moid canonicalize moid-publisher.json > moid-publisher.jcs
 
-# Print summary card or diff two manifest versions
-moid inspect moid.yaml
-moid diff v1/moid.yaml v2/moid.yaml
+# Verify a live publisher binding (HTTPS + NET-05 default-branch back-link + NET-06 DNS TXT + SIG-01)
+moid validate-publisher --live https://moid.info/.well-known/moid-publisher.json
 ~~~
 
----
+## Conformance Testing
 
-## Reusable GitHub Action
-
-Validate `moid.yaml` in any repository with two lines of workflow YAML:
-
-~~~yaml
-- uses: holosacred/moid@v0.2.0
-  with:
-    manifest: moid.yaml
+~~~bash
+cargo test --manifest-path cli/Cargo.toml
+node conformance/run-ajv.mjs
 ~~~
+
+## Publisher Verification (`holosacred`)
+
+The canonical publisher namespace binding for `holosacred` is hosted at https://moid.info/.well-known/moid-publisher.json (anchored via `_moid.moid.info`).

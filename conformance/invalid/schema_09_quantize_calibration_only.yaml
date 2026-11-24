@@ -1,5 +1,5 @@
-$schema: https://moid.info/schemas/v0.3.0-rc8/moid.schema.json
-spec_version: 0.3.0-rc8
+$schema: https://moid.info/schemas/v0.3.0/moid.schema.json
+spec_version: 0.3.0
 manifest_status: draft
 moid: bartowski/deepseek-r1-distill-qwen-7b-gguf
 name: DeepSeek-R1-Distill-Qwen-7B (GGUF imatrix Q4_K_M)

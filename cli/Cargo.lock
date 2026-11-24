@@ -495,13 +495,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a86d3146ed3995b5913c414f6664344b9617457320782e64f0bb44afd49d74"
 
 [[package]]
+name = "minisign-verify"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "22f9645cb765ea72b8111f36c522475d2daa0d22c957a9826437e97534bc4e9e"
+
+[[package]]
 name = "moid-cli"
-version = "0.3.0-rc.8"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "clap",
  "hex",
  "jsonschema",
+ "minisign-verify",
  "rayon",
  "serde",
  "serde_json",

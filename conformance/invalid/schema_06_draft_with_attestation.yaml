@@ -1,5 +1,5 @@
-$schema: https://moid.info/schemas/v0.3.0-rc8/moid.schema.json
-spec_version: 0.3.0-rc8
+$schema: https://moid.info/schemas/v0.3.0/moid.schema.json
+spec_version: 0.3.0
 manifest_status: draft
 moid: acme-corp/nexus-frontier
 name: Nexus Frontier API

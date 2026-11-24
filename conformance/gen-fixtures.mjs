@@ -186,6 +186,12 @@ p = pub(); p.namespace_claim.platform_proof_uri = "https://github.com/holosacred
 writeJson("schema_47_pub_proof_uppercase_issues.json", p);
 addSchemaNeg("schema_47_pub_proof_uppercase_issues.json", "publisher", "/namespace_claim/platform_proof_uri", "pattern");
 
+
+// 48: v0.3.0 dot-segment traversal guard
+p = pub(); p.namespace_claim.platform_proof_uri = "https://github.com/holosacred/moid/blob/main/../../issues/1";
+writeJson("schema_48_pub_proof_dot_segment.json", p);
+addSchemaNeg("schema_48_pub_proof_dot_segment.json", "publisher", "/namespace_claim/platform_proof_uri", "not");
+
 // CLI / CAT-01 / PUB-01 / NET-05 negatives (each passes schema, fails exact CLI rule)
 f = ex1(); f.lineage.derivations[1].produces = ["bf16-primary"]; writeYaml("cli_20_duplicate_checkpoint_producer.yaml", f);
 addCliNeg("cli_20_duplicate_checkpoint_producer.yaml", "moid", "FAIL", "cli", "DAG-01", "multiple activities");
@@ -252,9 +258,18 @@ addCliNeg("cli_36_focus_primary_not_in_weights.yaml", "moid", "FAIL", "cli", "FO
 
 p = pub(); p.namespace_claim.platform_proof_uri = "https://github.com/holosacred/moid/blob/feature-x/README.md";
 writeJson("cli_37_pub_non_default_branch_blob.json", p);
-addCliNeg("cli_37_pub_non_default_branch_blob.json", "publisher", "FAIL", "pub", "NET-05", "does not match repository default branch", ["--default-branch", "main"]);
+addCliNeg("cli_37_pub_non_default_branch_blob.json", "publisher", "FAIL", "pub", "NET-05", "does not start with repository default branch", ["--default-branch", "main"]);
+
+
+p = pub(); p.namespace_claim.platform_proof_uri = "https://github.com/holosacred/moid/blob/abc1234/README.md";
+writeJson("cli_38_pub_short_sha_blob.json", p);
+addCliNeg("cli_38_pub_short_sha_blob.json", "publisher", "FAIL", "pub", "NET-05", "does not start with repository default branch", ["--default-branch", "main"]);
+
+p = pub();
+writeJson("cli_39_pub_proof_redirect.json", p);
+addCliNeg("cli_39_pub_proof_redirect.json", "publisher", "FAIL", "pub", "NET-05", "redirected", ["--proof-redirect-target", "https://github.com/other/renamed/blob/main/README.md"]);
 
 fs.writeFileSync("conformance/invalid/cli_33_backlink_missing.html", "<html><body>No domain link here</body></html>\n");
 
 fs.writeFileSync("conformance/manifest.json", JSON.stringify(manifest, null, 2));
-console.log(`Generated ${manifest.length} manifest-tracked fixtures (9 valid, 47 schema negatives, 17 CLI/CAT/PUB negatives) + backlink fixture.`);
+console.log(`Generated ${manifest.length} manifest-tracked fixtures (9 valid, 48 schema negatives, 19 CLI/CAT/PUB negatives) + backlink fixture.`);

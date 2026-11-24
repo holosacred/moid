@@ -9,13 +9,13 @@ use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 
-const COMMON_SCHEMA_RAW: &str = include_str!("../../schemas/v0.3.0-rc8/common.schema.json");
-const MOID_SCHEMA_RAW: &str = include_str!("../../schemas/v0.3.0-rc8/moid.schema.json");
-const INGESTION_SCHEMA_RAW: &str = include_str!("../../schemas/v0.3.0-rc8/ingestion.schema.json");
-const PUBLISHER_SCHEMA_RAW: &str = include_str!("../../schemas/v0.3.0-rc8/publisher.schema.json");
+const COMMON_SCHEMA_RAW: &str = include_str!("../../schemas/v0.3.0/common.schema.json");
+const MOID_SCHEMA_RAW: &str = include_str!("../../schemas/v0.3.0/moid.schema.json");
+const INGESTION_SCHEMA_RAW: &str = include_str!("../../schemas/v0.3.0/ingestion.schema.json");
+const PUBLISHER_SCHEMA_RAW: &str = include_str!("../../schemas/v0.3.0/publisher.schema.json");
 const TEMPLATE_RAW: &str = include_str!("../../template.moid.yaml");
 
-const COMMON_ID: &str = "https://moid.info/schemas/v0.3.0-rc8/common.schema.json";
+const COMMON_ID: &str = "https://moid.info/schemas/v0.3.0/common.schema.json";
 const DISCLOSURE_SECTIONS: [&str; 6] = [
     "modulus", "domain_focus", "parameters", "lineage", "licensing", "data_provenance",
 ];
@@ -69,9 +69,12 @@ enum Commands {
         #[arg(long)]
         schema_only: bool,
     },
+    Canonicalize {
+        file: PathBuf,
+    },
     ValidatePublisher {
         #[arg(default_value = "moid-publisher.json")]
-        binding: PathBuf,
+        binding: String,
         #[arg(long)]
         serial_state: Option<PathBuf>,
         #[arg(long)]
@@ -79,11 +82,17 @@ enum Commands {
         #[arg(long)]
         default_branch: Option<String>,
         #[arg(long)]
+        proof_redirect_target: Option<String>,
+        #[arg(long)]
         dns_txt_file: Option<PathBuf>,
+        #[arg(long)]
+        binding_sig: Option<PathBuf>,
         #[arg(long)]
         continuity_signer: Option<String>,
         #[arg(long)]
         fail_on_continuity_break: bool,
+        #[arg(long)]
+        live: bool,
         #[arg(long)]
         schema_only: bool,
     },
@@ -107,7 +116,8 @@ fn main() -> Result<()> {
         Commands::Validate { manifest, verify_files, verify_catalog, strict, schema_only } => {
             cmd_validate(&manifest, verify_files, verify_catalog, strict, schema_only)
         }
-        Commands::ValidatePublisher { binding, serial_state, backlink_file, default_branch, dns_txt_file, continuity_signer, fail_on_continuity_break, schema_only } => cmd_validate_publisher(&binding, serial_state.as_deref(), backlink_file.as_deref(), default_branch.as_deref(), dns_txt_file.as_deref(), continuity_signer.as_deref(), fail_on_continuity_break, schema_only),
+        Commands::Canonicalize { file } => cmd_canonicalize(&file),
+        Commands::ValidatePublisher { binding, serial_state, backlink_file, default_branch, proof_redirect_target, dns_txt_file, binding_sig, continuity_signer, fail_on_continuity_break, live, schema_only } => cmd_validate_publisher(&binding, serial_state.as_deref(), backlink_file.as_deref(), default_branch.as_deref(), proof_redirect_target.as_deref(), dns_txt_file.as_deref(), binding_sig.as_deref(), continuity_signer.as_deref(), fail_on_continuity_break, live, schema_only),
         Commands::Inspect { manifest, verify_files } => cmd_inspect(&manifest, verify_files),
         Commands::Diff { old_manifest, new_manifest } => cmd_diff(&old_manifest, &new_manifest),
     }
@@ -330,6 +340,14 @@ fn parse_rfc3339_epoch(s: &str) -> Result<i64> {
     Ok(days * 86400 + hh * 3600 + mm * 60 + ss - offset_sec)
 }
 
+fn cmd_canonicalize(file: &Path) -> Result<()> {
+    use std::io::Write;
+    let val: Value = serde_json::from_str(&fs::read_to_string(file)?)?;
+    let bytes = canonical_json_bytes(&val);
+    std::io::stdout().write_all(&bytes)?;
+    Ok(())
+}
+
 fn identity_key_id(id: &Value) -> String {
     match id["kind"].as_str().unwrap_or("") {
         "pgp" => id["fingerprint"].as_str().unwrap_or("").to_ascii_uppercase(),
@@ -341,39 +359,181 @@ fn identity_key_id(id: &Value) -> String {
     }
 }
 
-fn extract_proof_blob_rest<'a>(plat: &str, uri: &'a str) -> Option<&'a str> {
-    let marker = match plat {
-        "github" | "huggingface" => "/blob/",
-        "gitlab" => "/-/blob/",
-        "codeberg" => "/src/branch/",
-        _ => return None,
-    };
-    uri.split_once(marker).map(|(_, rest)| rest)
-}
-
 fn is_hex_sha(seg: &str) -> bool {
     (seg.len() == 40 || seg.len() == 64) && seg.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
+fn canonicalize_https_url(raw: &str) -> Result<(String, String)> {
+    let rest = raw
+        .strip_prefix("https://")
+        .ok_or_else(|| anyhow::anyhow!("FAIL [NET-05]: proof URI '{}' must use https://", raw))?;
+    if rest.contains('?') || rest.contains('#') || rest.contains('%') {
+        bail!("FAIL [NET-05]: proof URI '{}' must not contain queries, fragments, or percent-encoding", raw);
+    }
+    let (auth, path_raw) = match rest.find('/') {
+        Some(i) => (&rest[..i], &rest[i..]),
+        None => (rest, "/"),
+    };
+    if auth.is_empty() || auth.contains('@') || auth.contains(':') {
+        bail!("FAIL [NET-05]: invalid authority '{}' in proof URI '{}'", auth, raw);
+    }
+    let mut stack: Vec<&str> = Vec::new();
+    for seg in path_raw.split('/') {
+        if seg.is_empty() || seg == "." {
+            continue;
+        } else if seg == ".." {
+            stack.pop();
+        } else {
+            stack.push(seg);
+        }
+    }
+    let norm_path = if stack.is_empty() { "/".to_string() } else { format!("/{}", stack.join("/")) };
+    Ok((auth.to_ascii_lowercase(), norm_path))
+}
+
+fn fetch_https_no_redirect(url: &str, rule: &str) -> Result<String> {
+    let out = std::process::Command::new("curl")
+        .args(["-sS", "--proto", "=https", "--max-redirs", "0", "-H", "User-Agent: moid-cli/0.3.0", "-w", "\n__MOID_META__%{http_code}|%{redirect_url}", url])
+        .output()?;
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let (body, meta) = stdout
+        .rsplit_once("\n__MOID_META__")
+        .ok_or_else(|| anyhow::anyhow!("FAIL [{}]: HTTPS fetch failed for '{}': {}", rule, url, String::from_utf8_lossy(&out.stderr).trim()))?;
+    let (code, redir) = meta.split_once('|').unwrap_or((meta, ""));
+    if code.starts_with('3') || !redir.is_empty() {
+        bail!("FAIL [{}]: '{}' redirected to '{}' (HTTP {}; redirects are forbidden)", rule, url, redir, code);
+    }
+    if code != "200" {
+        bail!("FAIL [{}]: '{}' returned HTTP {} (expected 200)", rule, url, code);
+    }
+    Ok(body.to_string())
+}
+
+fn verify_binding_signature_bytes(
+    val: &Value,
+    jcs_bytes: &[u8],
+    sig_bytes: &str,
+    prior_identities: Option<&[Value]>,
+    compromised_ids: &HashSet<String>,
+) -> Result<Option<String>> {
+    let fmt = val
+        .pointer("/binding_signature/format")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow::anyhow!("FAIL [SIG-01]: --binding-sig supplied but binding has no binding_signature.format"))?;
+    let cur_ids = val["allowed_identities"].as_array().map(|v| v.as_slice()).unwrap_or(&[]);
+
+    match fmt {
+        "minisign-v1" => {
+            let sig = minisign_verify::Signature::decode(sig_bytes)
+                .map_err(|e| anyhow::anyhow!("FAIL [SIG-01]: invalid minisign-v1 signature: {}", e))?;
+            let mut verified_cur: Option<String> = None;
+            for id in cur_ids.iter().filter(|i| i["kind"].as_str() == Some("minisign")) {
+                let pk_s = id["public_key"].as_str().unwrap_or("");
+                if let Ok(pk) = minisign_verify::PublicKey::from_base64(pk_s) {
+                    if pk.verify(jcs_bytes, &sig, false).is_ok() {
+                        verified_cur = Some(pk_s.to_string());
+                        break;
+                    }
+                }
+            }
+            let mut verified_prior: Option<String> = None;
+            if let Some(prev) = prior_identities {
+                for id in prev.iter().filter(|i| i["kind"].as_str() == Some("minisign")) {
+                    let pk_s = id["public_key"].as_str().unwrap_or("");
+                    if let Ok(pk) = minisign_verify::PublicKey::from_base64(pk_s) {
+                        if pk.verify(jcs_bytes, &sig, false).is_ok() {
+                            verified_prior = Some(pk_s.to_string());
+                            break;
+                        }
+                    }
+                }
+            }
+            let signer = verified_prior.clone().or(verified_cur.clone());
+            match signer {
+                Some(pk_s) => {
+                    println!("OK [SIG-01]: minisign-v1 signature verified (public_key={}).", pk_s);
+                    if let Some(ref p) = verified_prior {
+                        if compromised_ids.contains(p) {
+                            return Ok(Some(p.clone()));
+                        }
+                        return Ok(Some(p.clone()));
+                    }
+                    Ok(verified_cur)
+                }
+                None => bail!("FAIL [SIG-01]: minisign-v1 signature did not verify against any allowed or prior minisign public key"),
+            }
+        }
+        "pgp-detached-v1" => {
+            let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+            let tmp_jcs = std::env::temp_dir().join(format!("moid-jcs-{}-{}.json", std::process::id(), nanos));
+            let tmp_sig = std::env::temp_dir().join(format!("moid-sig-{}-{}.asc", std::process::id(), nanos));
+            fs::write(&tmp_jcs, jcs_bytes)?;
+            fs::write(&tmp_sig, sig_bytes)?;
+            let out = std::process::Command::new("gpg")
+                .args(["--batch", "--status-fd=1", "--verify", tmp_sig.to_str().unwrap(), tmp_jcs.to_str().unwrap()])
+                .output()?;
+            let _ = fs::remove_file(&tmp_jcs);
+            let _ = fs::remove_file(&tmp_sig);
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            if !out.status.success() {
+                bail!("FAIL [SIG-01]: gpg verification failed: {}", String::from_utf8_lossy(&out.stderr).trim());
+            }
+            let mut fprs: Vec<String> = Vec::new();
+            for line in stdout.lines() {
+                if let Some(rest) = line.strip_prefix("[GNUPG:] VALIDSIG ") {
+                    let parts: Vec<&str> = rest.split_whitespace().collect();
+                    if let Some(s) = parts.first() { fprs.push(s.to_ascii_uppercase()); }
+                    if let Some(p) = parts.get(9) { fprs.push(p.to_ascii_uppercase()); }
+                }
+            }
+            let match_in = |list: &[Value]| -> Option<String> {
+                for id in list.iter().filter(|i| i["kind"].as_str() == Some("pgp")) {
+                    let fp = id["fingerprint"].as_str().unwrap_or("").to_ascii_uppercase();
+                    if fprs.iter().any(|f| f == &fp) { return Some(fp); }
+                }
+                None
+            };
+            let v_prior = prior_identities.and_then(match_in);
+            let v_cur = match_in(cur_ids);
+            match v_prior.clone().or(v_cur.clone()) {
+                Some(fp) => {
+                    println!("OK [SIG-01]: pgp-detached-v1 signature verified (fingerprint={}).", fp);
+                    Ok(v_prior.or(v_cur))
+                }
+                None => bail!("FAIL [SIG-01]: valid GPG signature {:?} does not match any allowed or prior PGP fingerprint", fprs),
+            }
+        }
+        other => bail!("FAIL [SIG-01]: detached signature verification for '{}' is not yet implemented natively (supported: minisign-v1, pgp-detached-v1)", other),
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn cmd_validate_publisher(
-    binding: &Path,
+    binding: &str,
     serial_state: Option<&Path>,
     backlink_file: Option<&Path>,
     default_branch: Option<&str>,
+    proof_redirect_target: Option<&str>,
     dns_txt_file: Option<&Path>,
+    binding_sig: Option<&Path>,
     continuity_signer: Option<&str>,
     fail_on_continuity_break: bool,
+    live: bool,
     schema_only: bool,
 ) -> Result<()> {
     let validator = build_validator(PUBLISHER_SCHEMA_RAW)?;
-    let val: Value = serde_json::from_str(&fs::read_to_string(binding)?)?;
+    let raw_text = if binding.starts_with("https://") {
+        fetch_https_no_redirect(binding, "PUB-01")?
+    } else {
+        fs::read_to_string(binding)?
+    };
+    let val: Value = serde_json::from_str(&raw_text)?;
     let errs: Vec<String> = validator.iter_errors(&val).map(|e| format!("path={} msg={}", e.instance_path(), e)).collect();
     if !errs.is_empty() {
-        bail!("FAIL [SCHEMA-01]: {} failed publisher.schema.json:\n  - {}", binding.display(), errs.join("\n  - "));
+        bail!("FAIL [SCHEMA-01]: {} failed publisher.schema.json:\n  - {}", binding, errs.join("\n  - "));
     }
     if schema_only {
-        println!("OK [SCHEMA-01]: {} passed publisher.schema.json.", binding.display());
+        println!("OK [SCHEMA-01]: {} passed publisher.schema.json.", binding);
         return Ok(());
     }
     let updated_s = val["updated_at"].as_str().unwrap_or("");
@@ -399,37 +559,76 @@ fn cmd_validate_publisher(
             bail!("FAIL [PUB-01]: platform_account '{}' must match namespace '{}' (case-insensitive)", acct, ns);
         }
         let uri_raw = val.pointer("/namespace_claim/platform_proof_uri").and_then(|v| v.as_str()).unwrap_or("");
-        let uri_lower = uri_raw.to_ascii_lowercase();
-        let prefix = match plat {
-            "github" => "https://github.com/",
-            "huggingface" => "https://huggingface.co/",
-            "gitlab" => "https://gitlab.com/",
-            "codeberg" => "https://codeberg.org/",
+        if let Some(redir) = proof_redirect_target {
+            bail!("FAIL [NET-05]: platform_proof_uri '{}' redirected to '{}' (redirects are forbidden)", uri_raw, redir);
+        }
+        // Canonicalize first per RFC 3986, then enforce host, account, allowlist shape, and default-branch prefix
+        let (norm_host, norm_path) = canonicalize_https_url(uri_raw)?;
+        let expected_host = match plat {
+            "github" => "github.com",
+            "huggingface" => "huggingface.co",
+            "gitlab" => "gitlab.com",
+            "codeberg" => "codeberg.org",
             _ => bail!("FAIL [PUB-01]: unsupported platform '{}'", plat),
         };
-        let rest_acct = uri_lower.strip_prefix(prefix).unwrap_or("");
-        let ok_acct = rest_acct == acct || rest_acct.starts_with(&format!("{}/", acct));
-        if !ok_acct {
-            bail!("FAIL [PUB-01]: platform_proof_uri '{}' does not match platform_account '{}'", uri_raw, acct);
+        if norm_host != expected_host {
+            bail!("FAIL [NET-05]: canonicalized host '{}' does not match platform '{}'", norm_host, expected_host);
         }
-        if let Some(blob_rest) = extract_proof_blob_rest(plat, uri_raw) {
+        let norm_lower = norm_path.to_ascii_lowercase();
+        let is_profile = norm_lower == format!("/{}", acct);
+        if !is_profile {
+            let prefix = format!("/{}/", acct);
+            if !norm_lower.starts_with(&prefix) {
+                bail!("FAIL [PUB-01]: canonicalized platform_proof_uri '{}' does not match platform_account '{}'", norm_path, acct);
+            }
+            let after_acct = &norm_path[prefix.len()..];
+            let (repo_name, after_repo) = after_acct
+                .split_once('/')
+                .ok_or_else(|| anyhow::anyhow!("FAIL [NET-05]: canonicalized proof path '{}' is neither a profile page nor an allowlisted file path", norm_path))?;
+            let marker = match plat {
+                "github" | "huggingface" => "blob/",
+                "gitlab" => "-/blob/",
+                "codeberg" => "src/branch/",
+                _ => unreachable!(),
+            };
+            let blob_rest = after_repo
+                .strip_prefix(marker)
+                .ok_or_else(|| anyhow::anyhow!("FAIL [NET-05]: canonicalized proof path '{}' is outside allowlisted '{}'", norm_path, marker))?;
             let first_seg = blob_rest.split('/').next().unwrap_or("");
-            if is_hex_sha(first_seg) {
-                bail!("FAIL [NET-05]: commit SHA ref '{}' forbidden; proof URI must target the default branch name", first_seg);
+            if is_hex_sha(first_seg) || first_seg == "refs" {
+                bail!("FAIL [NET-05]: commit SHA or refs segment '{}' forbidden; proof URI must target the default branch", first_seg);
             }
-            if let Some(def_br) = default_branch {
-                if !blob_rest.starts_with(&format!("{}/", def_br)) {
-                    bail!("FAIL [NET-05]: proof URI ref in '{}' does not match repository default branch '{}'", uri_raw, def_br);
+            let resolved_default_branch: Option<String> = if let Some(b) = default_branch {
+                Some(b.to_string())
+            } else if live && plat == "github" {
+                let api_url = format!("https://api.github.com/repos/{}/{}", acct, repo_name);
+                let api_json: Value = serde_json::from_str(&fetch_https_no_redirect(&api_url, "NET-05")?)?;
+                api_json["default_branch"].as_str().map(|s| s.to_string())
+            } else {
+                None
+            };
+            if let Some(def_br) = resolved_default_branch {
+                let expected_prefix = format!("{}/", def_br);
+                if !blob_rest.starts_with(&expected_prefix) || blob_rest.len() <= expected_prefix.len() {
+                    bail!("FAIL [NET-05]: proof URI path in '{}' does not start with repository default branch '{}'", uri_raw, expected_prefix);
                 }
-                println!("OK [NET-05]: proof URI matches default branch '{}'.", def_br);
+                println!("OK [NET-05]: canonicalized proof URI matches default branch '{}'.", def_br);
             }
         }
-        if let Some(bf) = backlink_file {
-            let body = fs::read_to_string(bf)?.to_ascii_lowercase();
+        let body_opt: Option<String> = if let Some(bf) = backlink_file {
+            Some(fs::read_to_string(bf)?)
+        } else if live {
+            let fetch_url = format!("https://{}{}", norm_host, norm_path);
+            Some(fetch_https_no_redirect(&fetch_url, "NET-05")?)
+        } else {
+            None
+        };
+        if let Some(body) = body_opt {
+            let body_l = body.to_ascii_lowercase();
             let needle_well_known = format!("https://{}/.well-known/moid-publisher.json", dom.to_ascii_lowercase());
             let needle_root = format!("https://{}", dom.to_ascii_lowercase());
-            if !body.contains(&needle_well_known) && !body.contains(&needle_root) {
-                bail!("FAIL [NET-05]: platform profile at '{}' lacks back-link to '{}'", uri_raw, needle_root);
+            if !body_l.contains(&needle_well_known) && !body_l.contains(&needle_root) {
+                bail!("FAIL [NET-05]: platform proof at '{}' lacks back-link to '{}'", uri_raw, needle_root);
             }
             println!("OK [NET-05]: platform back-link to '{}' verified.", dom);
         }
@@ -453,23 +652,60 @@ fn cmd_validate_publisher(
             bail!("FAIL [PUB-01]: dns_txt_anchor '{}' must equal '{}'", anchor, expected_anchor);
         }
     }
-    let jcs = sha256_bytes(&canonical_json_bytes(&val));
-    if let Some(txt_path) = dns_txt_file {
-        let txt = fs::read_to_string(txt_path)?;
+    let jcs_bytes = canonical_json_bytes(&val);
+    let jcs = sha256_bytes(&jcs_bytes);
+
+    let txt_opt: Option<String> = if let Some(txt_path) = dns_txt_file {
+        Some(fs::read_to_string(txt_path)?)
+    } else if live {
+        if let Some(anchor) = val.get("dns_txt_anchor").and_then(|v| v.as_str()) {
+            let dig_out = std::process::Command::new("dig").args(["+short", "TXT", anchor]).output()?;
+            Some(String::from_utf8_lossy(&dig_out.stdout).replace('"', ""))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    if let Some(txt) = txt_opt {
         let expected_kv = format!("jcs={}", jcs);
         let matched = txt.lines().any(|l| l.contains("v=moid1;") && l.contains(&expected_kv));
         if !matched {
-            bail!("FAIL [NET-06]: DNS TXT record at '{}' does not anchor 'v=moid1; {}'", txt_path.display(), expected_kv);
+            bail!("FAIL [NET-06]: DNS TXT records do not anchor 'v=moid1; {}'", expected_kv);
         }
         println!("OK [NET-06]: DNS TXT anchor verified ({}).", expected_kv);
     }
+
+    let mut state: Map<String, Value> = if let Some(sp) = serial_state {
+        if sp.exists() { serde_json::from_str(&fs::read_to_string(sp)?)? } else { Map::new() }
+    } else {
+        Map::new()
+    };
+    let prior_ids_slice: Option<Vec<Value>> = state
+        .get(ns)
+        .and_then(|prev| prev.get("allowed_identities"))
+        .and_then(|a| a.as_array())
+        .cloned();
+
+    let mut auto_signer: Option<String> = None;
+    if let Some(sig_p) = binding_sig {
+        let sig_str = fs::read_to_string(sig_p)?;
+        auto_signer = verify_binding_signature_bytes(&val, &jcs_bytes, &sig_str, prior_ids_slice.as_deref(), &compromised_ids)?;
+    } else if live && binding.starts_with("https://") {
+        if let Some(sig_rel) = val.pointer("/binding_signature/path").and_then(|v| v.as_str()) {
+            let base = binding.rsplit_once('/').map(|(b, _)| b).unwrap_or(binding);
+            let sig_url = if sig_rel.starts_with("https://") {
+                sig_rel.to_string()
+            } else {
+                format!("{}/{}", base, sig_rel.trim_start_matches("./"))
+            };
+            let sig_str = fetch_https_no_redirect(&sig_url, "SIG-01")?;
+            auto_signer = verify_binding_signature_bytes(&val, &jcs_bytes, &sig_str, prior_ids_slice.as_deref(), &compromised_ids)?;
+        }
+    }
+
     let serial = val["serial"].as_u64().unwrap_or(0);
     if let Some(state_path) = serial_state {
-        let mut state: Map<String, Value> = if state_path.exists() {
-            serde_json::from_str(&fs::read_to_string(state_path)?)?
-        } else {
-            Map::new()
-        };
         if let Some(prev) = state.get(ns) {
             let prev_serial = prev["serial"].as_u64().unwrap_or(0);
             let prev_jcs = prev["jcs_digest"].as_str().unwrap_or("");
@@ -480,7 +716,8 @@ fn cmd_validate_publisher(
                 bail!("FAIL [PUB-01]: serial equivocation for '{}' (serial {} seen with different digest)", ns, serial);
             }
             if serial > prev_serial {
-                let prev_ids: HashSet<String> = prev.get("allowed_identities")
+                let prev_ids: HashSet<String> = prev
+                    .get("allowed_identities")
                     .and_then(|a| a.as_array())
                     .map(|arr| arr.iter().map(identity_key_id).collect())
                     .unwrap_or_default();
@@ -489,11 +726,12 @@ fn cmd_validate_publisher(
                     "serial advanced ({} -> {}) for '{}' without a verified continuity signature from prior allowed_identities",
                     prev_serial, serial, ns
                 );
-                if let Some(signer) = continuity_signer {
+                let eff_signer = continuity_signer.map(|s| s.to_string()).or(auto_signer);
+                if let Some(signer) = eff_signer {
                     let norm_signer = if signer.len() == 40 || signer.len() == 64 {
                         signer.to_ascii_uppercase()
                     } else {
-                        signer.to_string()
+                        signer.clone()
                     };
                     if compromised_ids.contains(&norm_signer) {
                         reason = format!("continuity signer '{}' was revoked for key_compromise and cannot authorize rotation", signer);
@@ -519,7 +757,7 @@ fn cmd_validate_publisher(
         state.insert(ns.to_string(), Value::Object(entry));
         fs::write(state_path, serde_json::to_string_pretty(&Value::Object(state))?)?;
     }
-    println!("OK [PUB-01]: {} passed publisher.schema.json (serial={}, jcs={}).", binding.display(), serial, jcs);
+    println!("OK [PUB-01]: {} passed publisher.schema.json (serial={}, jcs={}).", binding, serial, jcs);
     Ok(())
 }
 

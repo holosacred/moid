@@ -153,3 +153,38 @@ fn test_publisher_trust_continuity_and_network_rules() {
         .output().unwrap();
     assert!(!comp.status.success() && String::from_utf8_lossy(&comp.stderr).contains("key_compromise"));
 }
+
+#[test]
+fn test_canonicalize_and_minisign_sig01() {
+    let dir = tempdir().unwrap();
+    let pub_valid = root().join("conformance/valid/05_publisher_binding_gpg.json");
+
+    // 1. moid canonicalize emits valid compact RFC 8785 JCS JSON without trailing newline
+    let canon = Command::new(moid_bin())
+        .args(["canonicalize", pub_valid.to_str().unwrap()])
+        .output().unwrap();
+    assert!(canon.status.success(), "canonicalize failed: {}", String::from_utf8_lossy(&canon.stderr));
+    let canon_str = String::from_utf8(canon.stdout).unwrap();
+    assert!(!canon_str.ends_with('\n'), "JCS output must not have trailing newline");
+    let parsed: Value = serde_json::from_str(&canon_str).unwrap();
+    assert_eq!(parsed["spec_version"], "0.3.0");
+
+    // 2. minisign-v1 binding with tampered signature must fail SIG-01
+    let mut ms_pub: Value = serde_json::from_str(&fs::read_to_string(&pub_valid).unwrap()).unwrap();
+    ms_pub["allowed_identities"] = serde_json::json!([
+        { "kind": "minisign", "public_key": "RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3" }
+    ]);
+    ms_pub["binding_signature"] = serde_json::json!({
+        "format": "minisign-v1",
+        "path": "./moid-publisher.json.minisig"
+    });
+    let ms_path = dir.path().join("ms_pub.json");
+    fs::write(&ms_path, serde_json::to_string_pretty(&ms_pub).unwrap()).unwrap();
+    let bad_sig = dir.path().join("bad.minisig");
+    fs::write(&bad_sig, "untrusted comment: forged\nRWRAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\ntrusted comment: forged\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==\n").unwrap();
+    let fail = Command::new(moid_bin())
+        .args(["validate-publisher", ms_path.to_str().unwrap(), "--binding-sig", bad_sig.to_str().unwrap()])
+        .output().unwrap();
+    assert!(!fail.status.success() && String::from_utf8_lossy(&fail.stderr).contains("SIG-01"),
+        "Expected SIG-01 failure on forged minisign signature, got: {}", String::from_utf8_lossy(&fail.stderr));
+}
