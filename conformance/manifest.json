@@ -347,7 +347,7 @@
     "expect": "FAIL",
     "layer": "schema",
     "expected_path": "/namespace_claim/platform_proof_uri",
-    "expected_ajv_keyword": "not"
+    "expected_ajv_keyword": "pattern"
   },
   {
     "file": "conformance/invalid/schema_38_pub_proof_gh_issue_comment.json",
@@ -355,7 +355,7 @@
     "expect": "FAIL",
     "layer": "schema",
     "expected_path": "/namespace_claim/platform_proof_uri",
-    "expected_ajv_keyword": "not"
+    "expected_ajv_keyword": "pattern"
   },
   {
     "file": "conformance/invalid/schema_39_pub_proof_pr_ref.json",
@@ -363,7 +363,7 @@
     "expect": "FAIL",
     "layer": "schema",
     "expected_path": "/namespace_claim/platform_proof_uri",
-    "expected_ajv_keyword": "not"
+    "expected_ajv_keyword": "pattern"
   },
   {
     "file": "conformance/invalid/schema_40_pub_dotted_ns_platform_mode.json",
@@ -388,6 +388,46 @@
     "layer": "schema",
     "expected_path": "/modulus/x-family",
     "expected_ajv_keyword": "false schema"
+  },
+  {
+    "file": "conformance/invalid/schema_43_pub_proof_fork_sha_blob.json",
+    "schema": "publisher",
+    "expect": "FAIL",
+    "layer": "schema",
+    "expected_path": "/namespace_claim/platform_proof_uri",
+    "expected_ajv_keyword": "not"
+  },
+  {
+    "file": "conformance/invalid/schema_44_pub_proof_query_string.json",
+    "schema": "publisher",
+    "expect": "FAIL",
+    "layer": "schema",
+    "expected_path": "/namespace_claim/platform_proof_uri",
+    "expected_ajv_keyword": "pattern"
+  },
+  {
+    "file": "conformance/invalid/schema_45_pub_proof_actions_run.json",
+    "schema": "publisher",
+    "expect": "FAIL",
+    "layer": "schema",
+    "expected_path": "/namespace_claim/platform_proof_uri",
+    "expected_ajv_keyword": "pattern"
+  },
+  {
+    "file": "conformance/invalid/schema_46_pub_proof_commit_url.json",
+    "schema": "publisher",
+    "expect": "FAIL",
+    "layer": "schema",
+    "expected_path": "/namespace_claim/platform_proof_uri",
+    "expected_ajv_keyword": "pattern"
+  },
+  {
+    "file": "conformance/invalid/schema_47_pub_proof_uppercase_issues.json",
+    "schema": "publisher",
+    "expect": "FAIL",
+    "layer": "schema",
+    "expected_path": "/namespace_claim/platform_proof_uri",
+    "expected_ajv_keyword": "pattern"
   },
   {
     "file": "conformance/invalid/cli_20_duplicate_checkpoint_producer.yaml",
@@ -516,5 +556,17 @@
     "layer": "cli",
     "expected_rule": "FOCUS-01",
     "expected_msg": "not in focus_weights"
+  },
+  {
+    "file": "conformance/invalid/cli_37_pub_non_default_branch_blob.json",
+    "schema": "publisher",
+    "expect": "FAIL",
+    "layer": "pub",
+    "expected_rule": "NET-05",
+    "expected_msg": "does not match repository default branch",
+    "extra_args": [
+      "--default-branch",
+      "main"
+    ]
   }
 ]

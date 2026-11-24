@@ -1,6 +1,6 @@
 [package]
 name = "moid-cli"
-version = "0.3.0-rc.7"
+version = "0.3.0-rc.8"
 edition = "2021"
 description = "CLI tool for generating, hashing, inspecting, and validating MoID manifests"
 license = "MIT"

@@ -12,11 +12,11 @@ addFormats(ajv);
 ajv.addVocabulary(["x-verification"]);
 
 const loadJson = (p) => JSON.parse(fs.readFileSync(p, "utf8"));
-ajv.addSchema(loadJson("schemas/v0.3.0-rc7/common.schema.json"));
+ajv.addSchema(loadJson("schemas/v0.3.0-rc8/common.schema.json"));
 const validators = {
-  moid: ajv.compile(loadJson("schemas/v0.3.0-rc7/moid.schema.json")),
-  publisher: ajv.compile(loadJson("schemas/v0.3.0-rc7/publisher.schema.json")),
-  ingestion: ajv.compile(loadJson("schemas/v0.3.0-rc7/ingestion.schema.json")),
+  moid: ajv.compile(loadJson("schemas/v0.3.0-rc8/moid.schema.json")),
+  publisher: ajv.compile(loadJson("schemas/v0.3.0-rc8/publisher.schema.json")),
+  ingestion: ajv.compile(loadJson("schemas/v0.3.0-rc8/ingestion.schema.json")),
 };
 
 const moidBin = "cli/target/debug/moid";
@@ -61,7 +61,7 @@ for (const c of cases) {
     let schemaPass = true;
     if (c.schema === "moid") schemaPass = validators.moid(YAML.parse(fs.readFileSync(c.file, "utf8"), { schema: "core" }));
     if (c.schema === "publisher") schemaPass = validators.publisher(loadJson(c.file));
-    const rustArgs = c.layer === "cat" ? ["seal", c.file, "--non-draft"] : c.layer === "pub" ? ["validate-publisher", c.file] : ["validate", c.file];
+    const rustArgs = c.layer === "cat" ? ["seal", c.file, "--non-draft"] : c.layer === "pub" ? ["validate-publisher", c.file, ...(c.extra_args || [])] : ["validate", c.file, ...(c.extra_args || [])];
     const rustRes = runRust(rustArgs);
     const statusOk = c.expect === "WARN" ? rustRes.status === 0 : rustRes.status !== 0;
     const msgOk = rustRes.stderr.includes(c.expected_rule) && rustRes.stderr.includes(c.expected_msg);

@@ -23,8 +23,8 @@ const manifest = [];
 const addValid = (file, schema) => manifest.push({ file: `conformance/valid/${file}`, schema, expect: "PASS", layer: "both" });
 const addSchemaNeg = (file, schema, expected_path, expected_ajv_keyword) =>
   manifest.push({ file: `conformance/invalid/${file}`, schema, expect: "FAIL", layer: "schema", expected_path, expected_ajv_keyword });
-const addCliNeg = (file, schema, expect, layer, expected_rule, expected_msg) =>
-  manifest.push({ file: `conformance/invalid/${file}`, schema, expect, layer, expected_rule, expected_msg });
+const addCliNeg = (file, schema, expect, layer, expected_rule, expected_msg, extra_args = []) =>
+  manifest.push({ file: `conformance/invalid/${file}`, schema, expect, layer, expected_rule, expected_msg, ...(extra_args.length ? { extra_args } : {}) });
 
 for (const [file, schema] of [
   ["01_first_party_hybrid_policy.moid.yaml", "moid"],
@@ -142,15 +142,15 @@ addSchemaNeg("schema_36_pub_no_dot_hostname.json", "publisher", "/domain", "patt
 // 37–42: rc7 proof-URI deny-list, dotted namespace rule, dns_txt_anchor format, undisclosed x-* ban
 p = pub(); p.namespace = "deepseek-ai"; p.namespace_claim = { mode: "platform_bidirectional", platform: "huggingface", platform_account: "deepseek-ai", platform_proof_uri: "https://huggingface.co/deepseek-ai/DeepSeek-R1/discussions/99" };
 writeJson("schema_37_pub_proof_hf_discussion.json", p);
-addSchemaNeg("schema_37_pub_proof_hf_discussion.json", "publisher", "/namespace_claim/platform_proof_uri", "not");
+addSchemaNeg("schema_37_pub_proof_hf_discussion.json", "publisher", "/namespace_claim/platform_proof_uri", "pattern");
 
 p = pub(); p.namespace = "deepseek-ai"; p.namespace_claim = { mode: "platform_bidirectional", platform: "github", platform_account: "deepseek-ai", platform_proof_uri: "https://github.com/deepseek-ai/DeepSeek-V3/issues/1#issuecomment-1" };
 writeJson("schema_38_pub_proof_gh_issue_comment.json", p);
-addSchemaNeg("schema_38_pub_proof_gh_issue_comment.json", "publisher", "/namespace_claim/platform_proof_uri", "not");
+addSchemaNeg("schema_38_pub_proof_gh_issue_comment.json", "publisher", "/namespace_claim/platform_proof_uri", "pattern");
 
 p = pub(); p.namespace_claim.platform_proof_uri = "https://github.com/holosacred/moid/blob/refs%2Fpr%2F7/README.md";
 writeJson("schema_39_pub_proof_pr_ref.json", p);
-addSchemaNeg("schema_39_pub_proof_pr_ref.json", "publisher", "/namespace_claim/platform_proof_uri", "not");
+addSchemaNeg("schema_39_pub_proof_pr_ref.json", "publisher", "/namespace_claim/platform_proof_uri", "pattern");
 
 p = pub(); p.namespace = "openai.com";
 writeJson("schema_40_pub_dotted_ns_platform_mode.json", p);
@@ -163,6 +163,28 @@ addSchemaNeg("schema_41_pub_bad_dns_txt_anchor.json", "publisher", "/dns_txt_anc
 f = ex3(); f.modulus = { disclosure_status: "unknown", "x-family": "transformer" };
 writeYaml("schema_42_modulus_unknown_with_x_ext.yaml", f);
 addSchemaNeg("schema_42_modulus_unknown_with_x_ext.yaml", "moid", "/modulus/x-family", "false schema");
+
+
+// 43–47: rc8 allowlist & fork-network SHA bypass probes
+p = pub(); p.namespace_claim.platform_proof_uri = "https://github.com/holosacred/moid/blob/0123456789abcdef0123456789abcdef01234567/README.md";
+writeJson("schema_43_pub_proof_fork_sha_blob.json", p);
+addSchemaNeg("schema_43_pub_proof_fork_sha_blob.json", "publisher", "/namespace_claim/platform_proof_uri", "not");
+
+p = pub(); p.namespace_claim.platform_proof_uri = "https://github.com/holosacred/moid/issues?q=moid.info";
+writeJson("schema_44_pub_proof_query_string.json", p);
+addSchemaNeg("schema_44_pub_proof_query_string.json", "publisher", "/namespace_claim/platform_proof_uri", "pattern");
+
+p = pub(); p.namespace_claim.platform_proof_uri = "https://github.com/holosacred/moid/actions/runs/12345";
+writeJson("schema_45_pub_proof_actions_run.json", p);
+addSchemaNeg("schema_45_pub_proof_actions_run.json", "publisher", "/namespace_claim/platform_proof_uri", "pattern");
+
+p = pub(); p.namespace_claim.platform_proof_uri = "https://github.com/holosacred/moid/commit/0123456789abcdef0123456789abcdef01234567";
+writeJson("schema_46_pub_proof_commit_url.json", p);
+addSchemaNeg("schema_46_pub_proof_commit_url.json", "publisher", "/namespace_claim/platform_proof_uri", "pattern");
+
+p = pub(); p.namespace_claim.platform_proof_uri = "https://github.com/holosacred/moid/Issues/1";
+writeJson("schema_47_pub_proof_uppercase_issues.json", p);
+addSchemaNeg("schema_47_pub_proof_uppercase_issues.json", "publisher", "/namespace_claim/platform_proof_uri", "pattern");
 
 // CLI / CAT-01 / PUB-01 / NET-05 negatives (each passes schema, fails exact CLI rule)
 f = ex1(); f.lineage.derivations[1].produces = ["bf16-primary"]; writeYaml("cli_20_duplicate_checkpoint_producer.yaml", f);
@@ -227,7 +249,12 @@ f = ex1(); f.domain_focus.primary = "biology";
 writeYaml("cli_36_focus_primary_not_in_weights.yaml", f);
 addCliNeg("cli_36_focus_primary_not_in_weights.yaml", "moid", "FAIL", "cli", "FOCUS-01", "not in focus_weights");
 
+
+p = pub(); p.namespace_claim.platform_proof_uri = "https://github.com/holosacred/moid/blob/feature-x/README.md";
+writeJson("cli_37_pub_non_default_branch_blob.json", p);
+addCliNeg("cli_37_pub_non_default_branch_blob.json", "publisher", "FAIL", "pub", "NET-05", "does not match repository default branch", ["--default-branch", "main"]);
+
 fs.writeFileSync("conformance/invalid/cli_33_backlink_missing.html", "<html><body>No domain link here</body></html>\n");
 
 fs.writeFileSync("conformance/manifest.json", JSON.stringify(manifest, null, 2));
-console.log(`Generated ${manifest.length} manifest-tracked fixtures (9 valid, 42 schema negatives, 16 CLI/CAT/PUB negatives) + backlink fixture.`);
+console.log(`Generated ${manifest.length} manifest-tracked fixtures (9 valid, 47 schema negatives, 17 CLI/CAT/PUB negatives) + backlink fixture.`);

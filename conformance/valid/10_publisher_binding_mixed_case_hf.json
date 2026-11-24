@@ -1,6 +1,6 @@
 {
-  "$schema": "https://moid.info/schemas/v0.3.0-rc7/publisher.schema.json",
-  "spec_version": "0.3.0-rc7",
+  "$schema": "https://moid.info/schemas/v0.3.0-rc8/publisher.schema.json",
+  "spec_version": "0.3.0-rc8",
   "serial": 1,
   "namespace": "qwen",
   "domain": "qwenlm.github.io",

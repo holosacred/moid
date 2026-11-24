@@ -39,11 +39,16 @@ fn test_manifest_expected_error_assertions() {
         } else {
             let rule = c["expected_rule"].as_str().unwrap();
             let msg = c["expected_msg"].as_str().unwrap();
-            let args = match layer {
-                "cat" => vec!["seal", file.to_str().unwrap(), "--non-draft"],
-                "pub" => vec!["validate-publisher", file.to_str().unwrap()],
-                _ => vec!["validate", file.to_str().unwrap()],
+            let mut args: Vec<String> = match layer {
+                "cat" => vec!["seal".into(), file.to_string_lossy().into(), "--non-draft".into()],
+                "pub" => vec!["validate-publisher".into(), file.to_string_lossy().into()],
+                _ => vec!["validate".into(), file.to_string_lossy().into()],
             };
+            if let Some(extras) = c.get("extra_args").and_then(|v| v.as_array()) {
+                for a in extras.iter().filter_map(|v| v.as_str()) {
+                    args.push(a.to_string());
+                }
+            }
             let out = Command::new(moid_bin()).args(&args).output().unwrap();
             let stderr = String::from_utf8_lossy(&out.stderr);
             if expect == "WARN" { assert!(out.status.success()); } else { assert!(!out.status.success()); }
@@ -53,22 +58,22 @@ fn test_manifest_expected_error_assertions() {
 }
 
 #[test]
-fn test_publisher_serial_rollback_equivocation_and_net05_backlink() {
+fn test_publisher_trust_continuity_and_network_rules() {
     let dir = tempdir().unwrap();
     let state = dir.path().join("serials.json");
     let pub_valid = root().join("conformance/valid/05_publisher_binding_gpg.json");
     let backlink_ok = root().join("conformance/valid/09_backlink_profile_valid.html");
     let backlink_bad = root().join("conformance/invalid/cli_33_backlink_missing.html");
 
-    // 1. Valid NET-05 back-link + serial 2 saved to state
+    // 1. Valid NET-05 back-link + default-branch match + serial 2 saved to state
     let mut b2: Value = serde_json::from_str(&fs::read_to_string(&pub_valid).unwrap()).unwrap();
     b2["serial"] = Value::from(2);
     let b2_path = dir.path().join("b2.json");
     fs::write(&b2_path, serde_json::to_string_pretty(&b2).unwrap()).unwrap();
     let ok = Command::new(moid_bin())
-        .args(["validate-publisher", b2_path.to_str().unwrap(), "--serial-state", state.to_str().unwrap(), "--backlink-file", backlink_ok.to_str().unwrap()])
+        .args(["validate-publisher", b2_path.to_str().unwrap(), "--serial-state", state.to_str().unwrap(), "--backlink-file", backlink_ok.to_str().unwrap(), "--default-branch", "main"])
         .output().unwrap();
-    assert!(ok.status.success(), "Expected PASS with valid backlink & serial 2: {}", String::from_utf8_lossy(&ok.stderr));
+    assert!(ok.status.success(), "Expected PASS with valid backlink, default-branch & serial 2: {}", String::from_utf8_lossy(&ok.stderr));
 
     // 2. Missing NET-05 back-link fails
     let bad_bl = Command::new(moid_bin())
@@ -82,28 +87,69 @@ fn test_publisher_serial_rollback_equivocation_and_net05_backlink() {
         .output().unwrap();
     assert!(!rollback.status.success() && String::from_utf8_lossy(&rollback.stderr).contains("serial rollback"));
 
-    // 4. Same-serial equivocation (serial 2 with modified display_name) fails PUB-01
-    b2["display_name"] = Value::from("Equivocated Name");
+    // 4. Same-serial equivocation fails PUB-01
+    let mut b2_mod = b2.clone();
+    b2_mod["display_name"] = Value::from("Equivocated Name");
     let b2_eq = dir.path().join("b2_eq.json");
-    fs::write(&b2_eq, serde_json::to_string_pretty(&b2).unwrap()).unwrap();
+    fs::write(&b2_eq, serde_json::to_string_pretty(&b2_mod).unwrap()).unwrap();
     let eq = Command::new(moid_bin())
         .args(["validate-publisher", b2_eq.to_str().unwrap(), "--serial-state", state.to_str().unwrap()])
         .output().unwrap();
     assert!(!eq.status.success() && String::from_utf8_lossy(&eq.stderr).contains("serial equivocation"));
 
-    // 5. NET-06 DNS TXT anchor pass & mismatch
+    // 5. NET-06 multi-record DNS TXT rotation (two v=moid1; lines; second matches) & mismatch
     let ok_out = String::from_utf8_lossy(&ok.stdout);
     let jcs_part = ok_out.split("jcs=").nth(1).unwrap().split(')').next().unwrap();
-    let dns_ok = dir.path().join("dns_ok.txt");
+    let dns_multi = dir.path().join("dns_multi.txt");
     let dns_bad = dir.path().join("dns_bad.txt");
-    fs::write(&dns_ok, format!("v=moid1; jcs={}\n", jcs_part)).unwrap();
+    fs::write(&dns_multi, format!("v=moid1; jcs=sha256:1111111111111111111111111111111111111111111111111111111111111111\nv=moid1; jcs={}\n", jcs_part)).unwrap();
     fs::write(&dns_bad, "v=moid1; jcs=sha256:0000000000000000000000000000000000000000000000000000000000000000\n").unwrap();
     let d_pass = Command::new(moid_bin())
-        .args(["validate-publisher", b2_path.to_str().unwrap(), "--dns-txt-file", dns_ok.to_str().unwrap()])
+        .args(["validate-publisher", b2_path.to_str().unwrap(), "--dns-txt-file", dns_multi.to_str().unwrap()])
         .output().unwrap();
-    assert!(d_pass.status.success(), "Expected NET-06 PASS: {}", String::from_utf8_lossy(&d_pass.stderr));
+    assert!(d_pass.status.success(), "Expected NET-06 multi-record PASS: {}", String::from_utf8_lossy(&d_pass.stderr));
     let d_fail = Command::new(moid_bin())
         .args(["validate-publisher", b2_path.to_str().unwrap(), "--dns-txt-file", dns_bad.to_str().unwrap()])
         .output().unwrap();
     assert!(!d_fail.status.success() && String::from_utf8_lossy(&d_fail.stderr).contains("NET-06"));
+
+    // 6. Rotation to serial 3: valid continuity via prior PGP key -> PASS without warning
+    let mut b3 = b2.clone();
+    b3["serial"] = Value::from(3);
+    let b3_path = dir.path().join("b3.json");
+    fs::write(&b3_path, serde_json::to_string_pretty(&b3).unwrap()).unwrap();
+    let rot_ok = Command::new(moid_bin())
+        .args(["validate-publisher", b3_path.to_str().unwrap(), "--serial-state", state.to_str().unwrap(), "--continuity-signer", "0123456789ABCDEF0123456789ABCDEF01234567"])
+        .output().unwrap();
+    assert!(rot_ok.status.success() && !String::from_utf8_lossy(&rot_ok.stderr).contains("CONTINUITY_BREAK"));
+
+    // 7. Rotation to serial 4 without continuity signer -> PASS with WARN [CONTINUITY_BREAK] (and fails if --fail-on-continuity-break)
+    let mut b4 = b3.clone();
+    b4["serial"] = Value::from(4);
+    let b4_path = dir.path().join("b4.json");
+    fs::write(&b4_path, serde_json::to_string_pretty(&b4).unwrap()).unwrap();
+    let rot_fail_closed = Command::new(moid_bin())
+        .args(["validate-publisher", b4_path.to_str().unwrap(), "--serial-state", state.to_str().unwrap(), "--fail-on-continuity-break"])
+        .output().unwrap();
+    assert!(!rot_fail_closed.status.success() && String::from_utf8_lossy(&rot_fail_closed.stderr).contains("CONTINUITY_BREAK"));
+    let rot_warn = Command::new(moid_bin())
+        .args(["validate-publisher", b4_path.to_str().unwrap(), "--serial-state", state.to_str().unwrap()])
+        .output().unwrap();
+    assert!(rot_warn.status.success() && String::from_utf8_lossy(&rot_warn.stderr).contains("WARN [CONTINUITY_BREAK]"));
+
+    // 8. Rotation to serial 5 signed by a key revoked for key_compromise -> WARN [CONTINUITY_BREAK] (fails closed with flag)
+    let mut b5 = b4.clone();
+    b5["serial"] = Value::from(5);
+    b5["allowed_identities"] = serde_json::json!([
+        { "kind": "pgp", "fingerprint": "AAAABBBBCCCCDDDDEEEEFFFF0000111122223333" }
+    ]);
+    b5["revoked_identities"] = serde_json::json!([
+        { "identity": { "kind": "pgp", "fingerprint": "0123456789ABCDEF0123456789ABCDEF01234567" }, "revoked_at": "2026-11-24T12:00:00Z", "reason": "key_compromise" }
+    ]);
+    let b5_path = dir.path().join("b5.json");
+    fs::write(&b5_path, serde_json::to_string_pretty(&b5).unwrap()).unwrap();
+    let comp = Command::new(moid_bin())
+        .args(["validate-publisher", b5_path.to_str().unwrap(), "--serial-state", state.to_str().unwrap(), "--continuity-signer", "0123456789ABCDEF0123456789ABCDEF01234567", "--fail-on-continuity-break"])
+        .output().unwrap();
+    assert!(!comp.status.success() && String::from_utf8_lossy(&comp.stderr).contains("key_compromise"));
 }

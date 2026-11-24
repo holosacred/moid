@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://moid.info/schemas/v0.3.0-rc7/ingestion.schema.json",
-  "title": "MoID Ingestion Catalog Record v0.3.0-rc7",
+  "$id": "https://moid.info/schemas/v0.3.0-rc8/ingestion.schema.json",
+  "title": "MoID Ingestion Catalog Record v0.3.0-rc8",
   "type": "object",
   "required": [
     "record_id",

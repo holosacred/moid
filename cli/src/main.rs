@@ -9,13 +9,13 @@ use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 
-const COMMON_SCHEMA_RAW: &str = include_str!("../../schemas/v0.3.0-rc7/common.schema.json");
-const MOID_SCHEMA_RAW: &str = include_str!("../../schemas/v0.3.0-rc7/moid.schema.json");
-const INGESTION_SCHEMA_RAW: &str = include_str!("../../schemas/v0.3.0-rc7/ingestion.schema.json");
-const PUBLISHER_SCHEMA_RAW: &str = include_str!("../../schemas/v0.3.0-rc7/publisher.schema.json");
+const COMMON_SCHEMA_RAW: &str = include_str!("../../schemas/v0.3.0-rc8/common.schema.json");
+const MOID_SCHEMA_RAW: &str = include_str!("../../schemas/v0.3.0-rc8/moid.schema.json");
+const INGESTION_SCHEMA_RAW: &str = include_str!("../../schemas/v0.3.0-rc8/ingestion.schema.json");
+const PUBLISHER_SCHEMA_RAW: &str = include_str!("../../schemas/v0.3.0-rc8/publisher.schema.json");
 const TEMPLATE_RAW: &str = include_str!("../../template.moid.yaml");
 
-const COMMON_ID: &str = "https://moid.info/schemas/v0.3.0-rc7/common.schema.json";
+const COMMON_ID: &str = "https://moid.info/schemas/v0.3.0-rc8/common.schema.json";
 const DISCLOSURE_SECTIONS: [&str; 6] = [
     "modulus", "domain_focus", "parameters", "lineage", "licensing", "data_provenance",
 ];
@@ -77,7 +77,13 @@ enum Commands {
         #[arg(long)]
         backlink_file: Option<PathBuf>,
         #[arg(long)]
+        default_branch: Option<String>,
+        #[arg(long)]
         dns_txt_file: Option<PathBuf>,
+        #[arg(long)]
+        continuity_signer: Option<String>,
+        #[arg(long)]
+        fail_on_continuity_break: bool,
         #[arg(long)]
         schema_only: bool,
     },
@@ -101,7 +107,7 @@ fn main() -> Result<()> {
         Commands::Validate { manifest, verify_files, verify_catalog, strict, schema_only } => {
             cmd_validate(&manifest, verify_files, verify_catalog, strict, schema_only)
         }
-        Commands::ValidatePublisher { binding, serial_state, backlink_file, dns_txt_file, schema_only } => cmd_validate_publisher(&binding, serial_state.as_deref(), backlink_file.as_deref(), dns_txt_file.as_deref(), schema_only),
+        Commands::ValidatePublisher { binding, serial_state, backlink_file, default_branch, dns_txt_file, continuity_signer, fail_on_continuity_break, schema_only } => cmd_validate_publisher(&binding, serial_state.as_deref(), backlink_file.as_deref(), default_branch.as_deref(), dns_txt_file.as_deref(), continuity_signer.as_deref(), fail_on_continuity_break, schema_only),
         Commands::Inspect { manifest, verify_files } => cmd_inspect(&manifest, verify_files),
         Commands::Diff { old_manifest, new_manifest } => cmd_diff(&old_manifest, &new_manifest),
     }
@@ -324,7 +330,42 @@ fn parse_rfc3339_epoch(s: &str) -> Result<i64> {
     Ok(days * 86400 + hh * 3600 + mm * 60 + ss - offset_sec)
 }
 
-fn cmd_validate_publisher(binding: &Path, serial_state: Option<&Path>, backlink_file: Option<&Path>, dns_txt_file: Option<&Path>, schema_only: bool) -> Result<()> {
+fn identity_key_id(id: &Value) -> String {
+    match id["kind"].as_str().unwrap_or("") {
+        "pgp" => id["fingerprint"].as_str().unwrap_or("").to_ascii_uppercase(),
+        "ssh" => id["fingerprint"].as_str().unwrap_or("").to_string(),
+        "minisign" => id["public_key"].as_str().unwrap_or("").to_string(),
+        "key" => id["key_fingerprint"].as_str().unwrap_or("").to_string(),
+        "oidc" => id["subject"].as_str().unwrap_or("").to_string(),
+        _ => String::new(),
+    }
+}
+
+fn extract_proof_blob_rest<'a>(plat: &str, uri: &'a str) -> Option<&'a str> {
+    let marker = match plat {
+        "github" | "huggingface" => "/blob/",
+        "gitlab" => "/-/blob/",
+        "codeberg" => "/src/branch/",
+        _ => return None,
+    };
+    uri.split_once(marker).map(|(_, rest)| rest)
+}
+
+fn is_hex_sha(seg: &str) -> bool {
+    (seg.len() == 40 || seg.len() == 64) && seg.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn cmd_validate_publisher(
+    binding: &Path,
+    serial_state: Option<&Path>,
+    backlink_file: Option<&Path>,
+    default_branch: Option<&str>,
+    dns_txt_file: Option<&Path>,
+    continuity_signer: Option<&str>,
+    fail_on_continuity_break: bool,
+    schema_only: bool,
+) -> Result<()> {
     let validator = build_validator(PUBLISHER_SCHEMA_RAW)?;
     let val: Value = serde_json::from_str(&fs::read_to_string(binding)?)?;
     let errs: Vec<String> = validator.iter_errors(&val).map(|e| format!("path={} msg={}", e.instance_path(), e)).collect();
@@ -357,7 +398,8 @@ fn cmd_validate_publisher(binding: &Path, serial_state: Option<&Path>, backlink_
         if acct != ns.to_ascii_lowercase() {
             bail!("FAIL [PUB-01]: platform_account '{}' must match namespace '{}' (case-insensitive)", acct, ns);
         }
-        let uri = val.pointer("/namespace_claim/platform_proof_uri").and_then(|v| v.as_str()).unwrap_or("").to_ascii_lowercase();
+        let uri_raw = val.pointer("/namespace_claim/platform_proof_uri").and_then(|v| v.as_str()).unwrap_or("");
+        let uri_lower = uri_raw.to_ascii_lowercase();
         let prefix = match plat {
             "github" => "https://github.com/",
             "huggingface" => "https://huggingface.co/",
@@ -365,29 +407,43 @@ fn cmd_validate_publisher(binding: &Path, serial_state: Option<&Path>, backlink_
             "codeberg" => "https://codeberg.org/",
             _ => bail!("FAIL [PUB-01]: unsupported platform '{}'", plat),
         };
-        let rest = uri.strip_prefix(prefix).unwrap_or("");
-        let ok_acct = rest == acct
-            || rest.starts_with(&format!("{}/", acct))
-            || (plat == "github" && (rest == format!("orgs/{}", acct) || rest.starts_with(&format!("orgs/{}/", acct))));
+        let rest_acct = uri_lower.strip_prefix(prefix).unwrap_or("");
+        let ok_acct = rest_acct == acct || rest_acct.starts_with(&format!("{}/", acct));
         if !ok_acct {
-            bail!("FAIL [PUB-01]: platform_proof_uri '{}' does not match platform_account '{}'", uri, acct);
+            bail!("FAIL [PUB-01]: platform_proof_uri '{}' does not match platform_account '{}'", uri_raw, acct);
+        }
+        if let Some(blob_rest) = extract_proof_blob_rest(plat, uri_raw) {
+            let first_seg = blob_rest.split('/').next().unwrap_or("");
+            if is_hex_sha(first_seg) {
+                bail!("FAIL [NET-05]: commit SHA ref '{}' forbidden; proof URI must target the default branch name", first_seg);
+            }
+            if let Some(def_br) = default_branch {
+                if !blob_rest.starts_with(&format!("{}/", def_br)) {
+                    bail!("FAIL [NET-05]: proof URI ref in '{}' does not match repository default branch '{}'", uri_raw, def_br);
+                }
+                println!("OK [NET-05]: proof URI matches default branch '{}'.", def_br);
+            }
         }
         if let Some(bf) = backlink_file {
             let body = fs::read_to_string(bf)?.to_ascii_lowercase();
             let needle_well_known = format!("https://{}/.well-known/moid-publisher.json", dom.to_ascii_lowercase());
             let needle_root = format!("https://{}", dom.to_ascii_lowercase());
             if !body.contains(&needle_well_known) && !body.contains(&needle_root) {
-                bail!("FAIL [NET-05]: platform profile at '{}' lacks back-link to '{}'", uri, needle_root);
+                bail!("FAIL [NET-05]: platform profile at '{}' lacks back-link to '{}'", uri_raw, needle_root);
             }
             println!("OK [NET-05]: platform back-link to '{}' verified.", dom);
         }
     }
     let allowed: HashSet<Vec<u8>> = val["allowed_identities"]
         .as_array().map(|a| a.iter().map(canonical_json_bytes).collect()).unwrap_or_default();
+    let mut compromised_ids: HashSet<String> = HashSet::new();
     if let Some(revs) = val.get("revoked_identities").and_then(|v| v.as_array()) {
         for r in revs {
             if allowed.contains(&canonical_json_bytes(&r["identity"])) {
                 bail!("FAIL [PUB-01]: identity appears in both allowed_identities and revoked_identities");
+            }
+            if r.get("reason").and_then(|v| v.as_str()) == Some("key_compromise") {
+                compromised_ids.insert(identity_key_id(&r["identity"]));
             }
         }
     }
@@ -423,10 +479,43 @@ fn cmd_validate_publisher(binding: &Path, serial_state: Option<&Path>, backlink_
             if serial == prev_serial && jcs != prev_jcs {
                 bail!("FAIL [PUB-01]: serial equivocation for '{}' (serial {} seen with different digest)", ns, serial);
             }
+            if serial > prev_serial {
+                let prev_ids: HashSet<String> = prev.get("allowed_identities")
+                    .and_then(|a| a.as_array())
+                    .map(|arr| arr.iter().map(identity_key_id).collect())
+                    .unwrap_or_default();
+                let mut continuity_ok = false;
+                let mut reason = format!(
+                    "serial advanced ({} -> {}) for '{}' without a verified continuity signature from prior allowed_identities",
+                    prev_serial, serial, ns
+                );
+                if let Some(signer) = continuity_signer {
+                    let norm_signer = if signer.len() == 40 || signer.len() == 64 {
+                        signer.to_ascii_uppercase()
+                    } else {
+                        signer.to_string()
+                    };
+                    if compromised_ids.contains(&norm_signer) {
+                        reason = format!("continuity signer '{}' was revoked for key_compromise and cannot authorize rotation", signer);
+                    } else if prev_ids.contains(&norm_signer) {
+                        continuity_ok = true;
+                        println!("OK [PUB-01]: key continuity verified via prior identity '{}'.", signer);
+                    } else {
+                        reason = format!("continuity signer '{}' is not in prior binding's allowed_identities", signer);
+                    }
+                }
+                if !continuity_ok {
+                    eprintln!("WARN [CONTINUITY_BREAK]: {}", reason);
+                    if fail_on_continuity_break {
+                        bail!("FAIL [CONTINUITY_BREAK]: {}", reason);
+                    }
+                }
+            }
         }
         let mut entry = Map::new();
         entry.insert("serial".into(), Value::from(serial));
         entry.insert("jcs_digest".into(), Value::from(jcs.clone()));
+        entry.insert("allowed_identities".into(), val["allowed_identities"].clone());
         state.insert(ns.to_string(), Value::Object(entry));
         fs::write(state_path, serde_json::to_string_pretty(&Value::Object(state))?)?;
     }
