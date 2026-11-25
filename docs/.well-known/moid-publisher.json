@@ -1,0 +1,35 @@
+{
+  "$schema": "https://moid.info/schemas/v0.3.0/publisher.schema.json",
+  "spec_version": "0.3.0",
+  "serial": 1,
+  "namespace": "holosacred",
+  "domain": "moid.info",
+  "display_name": "Holosacred Research",
+  "namespace_claim": {
+    "mode": "platform_bidirectional",
+    "platform": "github",
+    "platform_account": "holosacred",
+    "platform_proof_uri": "https://github.com/holosacred/moid/blob/main/README.md"
+  },
+  "updated_at": "2026-11-25T00:13:43Z",
+  "expires_at": "2027-02-23T00:13:43Z",
+  "dns_txt_anchor": "_moid.moid.info",
+  "repositories": [
+    "https://github.com/holosacred/moid"
+  ],
+  "allowed_identities": [
+    {
+      "kind": "pgp",
+      "fingerprint": "834B15DEEE2830B61904AE1C4444EC936E03C78C",
+      "keyserver_uri": "https://moid.info/keys/holosacred-pgp.asc"
+    },
+    {
+      "kind": "minisign",
+      "public_key": "RWTFS6Jo0BdYcJvpfwsPP9l7fsnBKjHosAsFOKspRbI+mEXSKFR2sJWw"
+    }
+  ],
+  "binding_signature": {
+    "format": "pgp-detached-v1",
+    "path": "./moid-publisher.json.asc"
+  }
+}
